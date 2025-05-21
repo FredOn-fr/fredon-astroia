@@ -20,11 +20,9 @@ st.title("🔮 FredOn-AstroIA : Thème natal astrologique")
 
 def get_coords_from_google(city_name):
     import os
+    # Google Maps
     url = "https://maps.googleapis.com/maps/api/geocode/json"
-    params = {
-        "address": city_name,
-        "key": os.getenv("GOOGLE_MAPS_API_KEY")
-    }
+    params = {"address": city_name, "key": os.getenv("GOOGLE_MAPS_API_KEY")}
     response = requests.get(url, params=params)
     if response.status_code == 200:
         results = response.json().get("results")
@@ -32,6 +30,23 @@ def get_coords_from_google(city_name):
             loc = results[0]["geometry"]["location"]
             name = results[0]["formatted_address"]
             return loc["lat"], loc["lng"], name
+
+    # Fallback LocationIQ
+    locationiq_key = os.getenv("LOCATIONIQ_KEY")
+    if locationiq_key:
+        locationiq_url = "https://eu1.locationiq.com/v1/search.php"
+        l_params = {
+            "key": locationiq_key,
+            "q": city_name,
+            "format": "json",
+            "limit": 1
+        }
+        l_headers = {"User-Agent": "fredon-astroia"}
+        l_response = requests.get(locationiq_url, params=l_params, headers=l_headers)
+        if l_response.status_code == 200:
+            l_data = l_response.json()[0]
+            return float(l_data["lat"]), float(l_data["lon"]), l_data["display_name"]
+
     return None, None, None
 
 def get_timezone(lat, lon, year, month, day):
