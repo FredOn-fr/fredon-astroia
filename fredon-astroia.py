@@ -100,37 +100,39 @@ else:
     }
 
     if st.button("🎁 Générer mon thème complet"):
-        auth = HTTPBasicAuth(USER_ID, API_KEY)
-        base_url = "https://json.astrologyapi.com/v1/"
+        with st.spinner("🔮 Génération de votre thème en cours..."):
+            auth = HTTPBasicAuth(USER_ID, API_KEY)
+            base_url = "https://json.astrologyapi.com/v1/"
 
-        chart = requests.post(base_url + "natal_wheel_chart", auth=auth, json=birth_data)
-        if chart.status_code == 200:
-            st.session_state["chart_url"] = chart.json()["chart_url"]
+            chart = requests.post(base_url + "natal_wheel_chart", auth=auth, json=birth_data)
+            if chart.status_code == 200:
+                st.session_state["chart_url"] = chart.json()["chart_url"]
 
-        planets = requests.post(base_url + "planets/tropical", auth=auth, json={**birth_data, "hsys": "placidus"})
-        planet_lines = []
-        if planets.status_code == 200:
-            for p in planets.json():
-                name = traductions.get(p["name"], p["name"])
-                sign = traductions.get(p["sign"], p["sign"])
-                house = p.get("house", "?")
-                planet_lines.append(f"{name} en {sign}, maison {house}")
-            st.session_state["planet_lines"] = planet_lines
+            planets = requests.post(base_url + "planets/tropical", auth=auth, json={**birth_data, "hsys": "placidus"})
+            planet_lines = []
+            if planets.status_code == 200:
+                for p in planets.json():
+                    name = traductions.get(p["name"], p["name"])
+                    sign = traductions.get(p["sign"], p["sign"])
+                    house = p.get("house", "?")
+                    planet_lines.append(f"{name} en {sign}, maison {house}")
+                st.session_state["planet_lines"] = planet_lines
 
-        resume_theme = f"Voici le thème natal de {nom}, né le {day}/{month}/{year} à {hour:02d}:{minute:02d} à {location_name}."
-        resume_theme += "Planètes : " + ", ".join(planet_lines) + "."
+            resume_theme = f"Voici le thème natal de {nom}, né le {day}/{month}/{year} à {hour:02d}:{minute:02d} à {location_name}."
+            resume_theme += "Planètes : " + ", ".join(planet_lines) + "."
 
-        prompt = resume_theme + "Fais une interprétation astrologique poétique, bienveillante et inspirante de ce thème."
-        interpretation = openai.chat.completions.create(
-            model="gpt-4-turbo",
-            messages=[
-                {"role": "system", "content": "Tu es un astrologue poétique et bienveillant."},
-                {"role": "user", "content": prompt}
-            ]
+            prompt = resume_theme + "Fais une interprétation astrologique poétique, bienveillante et inspirante de ce thème."
+            interpretation = openai.chat.completions.create(
+                model="gpt-4-turbo",
+                messages=[
+                    {"role": "system", "content": "Tu es un astrologue poétique et bienveillant."},
+                    {"role": "user", "content": prompt}
+                ]
         ).choices[0].message.content
 
         st.session_state["resume_theme"] = resume_theme
         st.session_state["interpretation"] = interpretation
+        st.success("✨ Thème généré avec succès ! Découvre ton interprétation ci-dessous.")
         st.session_state["chat_messages"] = [
             {"role": "system", "content": "Tu es un astrologue poétique et bienveillant."},
             {"role": "user", "content": resume_theme},
