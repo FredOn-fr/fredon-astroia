@@ -19,14 +19,27 @@ st.title("🔮 FredOn-AstroIA : Thème natal astrologique")
 # === FONCTIONS ===
 
 def get_coords_from_city(city_name):
+    if "geo_cache" in st.session_state and st.session_state["geo_cache"].get("place") == city_name:
+        return (
+            st.session_state["geo_cache"]["lat"],
+            st.session_state["geo_cache"]["lon"],
+            st.session_state["geo_cache"]["name"]
+        )
+
     url = "https://nominatim.openstreetmap.org/search"
-    params = {'q': city_name, 'format': 'json', 'limit': 1}
-    headers = {'User-Agent': 'FredOn-AstroIA'}
+    params = {"q": city_name, "format": "json", "limit": 1}
+    headers = {"User-Agent": "fredon-astroia"}
     response = requests.get(url, params=params, headers=headers)
+
     if response.status_code == 200 and response.json():
         data = response.json()[0]
-        return float(data['lat']), float(data['lon']), data['display_name']
-    return None, None, None
+        lat = float(data["lat"])
+        lon = float(data["lon"])
+        name = data["display_name"]
+        st.session_state["geo_cache"] = {"place": city_name, "lat": lat, "lon": lon, "name": name}
+        return lat, lon, name
+    else:
+        return None, None, None
 
 def get_timezone(lat, lon, year, month, day):
     url = "https://json.astrologyapi.com/v1/timezone_with_dst"
