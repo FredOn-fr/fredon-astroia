@@ -73,7 +73,9 @@ with col4:
     hour = st.number_input("Heure", 0, 23, 12)
 with col5:
     minute = st.number_input("Minute", 0, 59, 0)
-ville = st.text_input("Ville de naissance", value="Paris, France")
+ville = st.text_input("Ville de naissance")
+if not ville:
+    st.warning("✋ Merci d’entrer une ville avec pays, ex : Paris, France")
 
 lat, lon, location_name = get_coords_from_city(ville)
 if lat is None or lon is None:
