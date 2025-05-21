@@ -1,0 +1,14 @@
+# Ne pas publier les variables sensibles
+.env
+
+# Cache Streamlit
+.streamlit/
+
+# Cache Python
+__pycache__/
+*.py[cod]
+*.pyo
+
+# Fichiers temporaires ou système
+.DS_Store
+Thumbs.db
