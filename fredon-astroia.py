@@ -17,6 +17,8 @@ API_KEY = os.getenv("ASTROLOGYAPI_API_KEY")
 
 st.set_page_config(page_title="FredOn-AstroIA", layout="centered")
 st.title("🔮 FredOn-AstroIA : Thème natal astrologique")
+if "chat_messages" not in st.session_state:
+    st.session_state["chat_messages"] = []
 
 # === FONCTIONS ===
 
@@ -113,6 +115,32 @@ def envoyer_email(destinataire, chemin_html, nom):
         smtp.login(os.getenv("SMTP_USER"), os.getenv("SMTP_PASS"))
         smtp.send_message(msg)
 
+def generer_discussion_html(nom, messages):
+    contenu_html = f"""
+    <html>
+    <head>
+        <meta charset="UTF-8">
+        <style>
+            body {{ font-family: Arial, sans-serif; padding: 20px; color: #333; }}
+            .assistant {{ color: #4a148c; margin-bottom: 10px; }}
+            .user {{ color: #00695c; margin-bottom: 10px; }}
+        </style>
+    </head>
+    <body>
+        <h1>💬 Discussion avec Astro-IA de {nom}</h1>
+    """
+    for msg in messages[3:]:
+        role = "assistant" if msg["role"] == "assistant" else "user"
+        label = "Astro-IA" if role == "assistant" else "Toi"
+        contenu_html += f'<p class="{role}"><strong>{label} :</strong> {msg["content"].replace("\n", "<br>")}</p>'
+    contenu_html += "</body></html>"
+
+    chemin_discussion = f"discussion_{nom}.html"
+    with open(chemin_discussion, "w", encoding="utf-8") as f:
+        f.write(contenu_html)
+    return chemin_discussion
+
+
 traductions = {
     "Sun": "Soleil", "Moon": "Lune", "Mercury": "Mercure", "Venus": "Vénus", "Mars": "Mars",
     "Jupiter": "Jupiter", "Saturn": "Saturne", "Uranus": "Uranus", "Neptune": "Neptune", "Pluto": "Pluton",
@@ -198,7 +226,7 @@ else:
 
 # ✅ Affichage persistant si thème généré
 
-if all(k in st.session_state for k in ("resume_theme", "planet_lines", "interpretation", "chart_url")):
+if all(k in st.session_state for k in ("resume_theme", "planet_lines", "interpretation", "chart_url", "chat_messages")):
     chemin_html = generer_fichier_html(
         nom,
         st.session_state["resume_theme"],
@@ -216,7 +244,7 @@ if all(k in st.session_state for k in ("resume_theme", "planet_lines", "interpre
         )
 
     email_user = st.text_input("📨 Entre ton adresse e-mail pour recevoir ton thème")
-    if st.button("Envoyer mon thème par mail") and email_user:
+    if st.button("Envoyer mon thème par mail", key="send_theme_button") and email_user:
         envoyer_email(email_user, chemin_html, nom)
         st.success("✅ Ton thème a été envoyé par e-mail avec succès !")
 
@@ -235,9 +263,8 @@ if "interpretation" in st.session_state:
     st.subheader("✨ Interprétation poétique (IA)")
     st.write(st.session_state["interpretation"])
 
-# === CHATBOT AVEC GPT-3.5
-
-if "chat_messages" in st.session_state:
+# === CHATBOT AVEC GPT-3.5 ===
+if all(k in st.session_state for k in ("resume_theme", "planet_lines", "interpretation", "chart_url", "chat_messages")):
     st.markdown("---")
     st.subheader("💬 Discute avec Astro-IA")
 
@@ -246,12 +273,36 @@ if "chat_messages" in st.session_state:
         st.markdown(f"**{role} :** {msg['content']}")
 
     user_input = st.text_input("Pose une nouvelle question à Astro-IA", key="new_chat_input")
-    if st.button("Envoyer ma question"):
+    if st.button("Envoyer ma question") and user_input.strip():
         st.session_state.chat_messages.append({"role": "user", "content": user_input})
-        chat_reply = openai.chat.completions.create(
-            model="gpt-3.5-turbo",
-            messages=st.session_state.chat_messages
-        )
-        msg = chat_reply.choices[0].message.content
-        st.session_state.chat_messages.append({"role": "assistant", "content": msg})
+
+        try:
+            chat_reply = openai.chat.completions.create(
+                model="gpt-3.5-turbo",
+                messages=st.session_state.chat_messages
+            )
+            msg = chat_reply.choices[0].message.content
+            st.session_state.chat_messages.append({"role": "assistant", "content": msg})
+        except Exception as e:
+            st.error(f"Erreur lors de la réponse de l'IA : {e}")
+
         st.rerun()
+
+# === Export et envoi discussion Astro-IA ===
+
+    if st.session_state["chat_messages"]:
+        chemin_discussion = generer_discussion_html(nom, st.session_state["chat_messages"])
+
+        with open(chemin_discussion, "rb") as file:
+            st.download_button(
+                label="📥 Télécharger la discussion avec Astro-IA",
+                data=file,
+                file_name=f"discussion_{nom}.html",
+                mime="text/html"
+            )
+
+        email_discussion = st.text_input("📨 Adresse e-mail pour recevoir ta discussion")
+
+    if st.button("Envoyer la discussion par mail", key="email_discussion_input") and email_discussion:
+            envoyer_email(email_discussion, chemin_discussion, nom)
+            st.success("✅ La discussion a été envoyée par e-mail avec succès !")
