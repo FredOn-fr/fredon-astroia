@@ -103,7 +103,7 @@ def generer_fichier_html(nom, resume, planetes, interpretation, chart_url):
 
 def envoyer_email(destinataire, chemin_html, nom):
     msg = EmailMessage()
-    msg['Subject'] = f"Ton thème natal - {nom}"
+    msg['Subject'] = f"FredOn-AstroIA - Ton thème natal - {nom}"
     msg['From'] = os.getenv("SMTP_USER")
     msg['To'] = destinataire
     msg.set_content(f"Bonjour {nom},\n\nVoici ton thème astrologique en pièce jointe. 🌌")
@@ -209,7 +209,7 @@ else:
             interpretation = openai.chat.completions.create(
                 model="gpt-4-turbo",
                 messages=[
-                    {"role": "system", "content": "Tu es un astrologue poétique et bienveillant."},
+                    {"role": "system", "content": "Tu es un astrologue poétique et bienveillant, tu connais le thème astral de l'utilisateur. Tu ne réponds pas à des questions sur le thème du suicide, de la mort ou de la drogue. Si l'utilisateur présente des difficultés psychologiques ou maladives, le diriger vers les instances médicales compétentes."},
                     {"role": "user", "content": prompt}
                 ]
             ).choices[0].message.content
@@ -217,7 +217,7 @@ else:
             st.session_state["resume_theme"] = resume_theme
             st.session_state["interpretation"] = interpretation
             st.session_state["chat_messages"] = [
-                {"role": "system", "content": "Tu es un astrologue poétique et bienveillant."},
+                {"role": "system", "content": "Tu es un astrologue poétique et bienveillant, tu connais le thème astral de l'utilisateur. Tu ne réponds pas à des questions sur le thème du suicide, de la mort ou de la drogue. Si l'utilisateur présente des difficultés psychologiques ou maladives, le diriger vers les instances médicales compétentes."},
                 {"role": "user", "content": resume_theme},
                 {"role": "assistant", "content": interpretation}
             ]
