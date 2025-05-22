@@ -2,5 +2,6 @@ streamlit
 openai
 requests
 python-dotenv
-weasyprint
+
+
 
