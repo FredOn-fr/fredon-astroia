@@ -6,6 +6,8 @@ import openai
 import os
 from dotenv import load_dotenv
 from requests.auth import HTTPBasicAuth
+import smtplib
+from email.message import EmailMessage
 
 # === CHARGEMENT DES VARIABLES D'ENVIRONNEMENT ===
 load_dotenv()
@@ -57,18 +59,7 @@ def get_timezone(lat, lon, year, month, day):
         return float(response.json()["timezone"])
     return 1.0
 
-traductions = {
-    "Sun": "Soleil", "Moon": "Lune", "Mercury": "Mercure", "Venus": "Vénus", "Mars": "Mars",
-    "Jupiter": "Jupiter", "Saturn": "Saturne", "Uranus": "Uranus", "Neptune": "Neptune", "Pluto": "Pluton",
-    "North Node": "Nœud Nord", "South Node": "Nœud Sud",
-    "Aries": "Bélier", "Taurus": "Taureau", "Gemini": "Gémeaux", "Cancer": "Cancer",
-    "Leo": "Lion", "Virgo": "Vierge", "Libra": "Balance", "Scorpio": "Scorpion",
-    "Sagittarius": "Sagittaire", "Capricorn": "Capricorne", "Aquarius": "Verseau", "Pisces": "Poissons"
-}
-
-from weasyprint import HTML
-
-def generer_pdf_avec_visuel_weasy(nom, resume, planetes, interpretation, chart_url):
+def generer_fichier_html(nom, resume, planetes, interpretation, chart_url):
     contenu_html = f"""
     <html>
     <head>
@@ -103,26 +94,33 @@ def generer_pdf_avec_visuel_weasy(nom, resume, planetes, interpretation, chart_u
     </body>
     </html>
     """
-    chemin_pdf = f"theme_{nom}.pdf"
-    HTML(string=contenu_html).write_pdf(chemin_pdf)
-    return chemin_pdf
+    chemin_html = f"theme_{nom}.html"
+    with open(chemin_html, "w", encoding="utf-8") as f:
+        f.write(contenu_html)
+    return chemin_html
 
-import smtplib
-from email.message import EmailMessage
-
-def envoyer_email(destinataire, chemin_pdf, nom):
+def envoyer_email(destinataire, chemin_html, nom):
     msg = EmailMessage()
     msg['Subject'] = f"Ton thème natal - {nom}"
-    msg['From'] = os.getenv("EMAIL_EXPEDITEUR")
+    msg['From'] = os.getenv("SMTP_USER")
     msg['To'] = destinataire
     msg.set_content(f"Bonjour {nom},\n\nVoici ton thème astrologique en pièce jointe. 🌌")
 
-    with open(chemin_pdf, 'rb') as f:
-        msg.add_attachment(f.read(), maintype='application', subtype='pdf', filename=f"theme_{nom}.pdf")
+    with open(chemin_html, 'rb') as f:
+        msg.add_attachment(f.read(), maintype='text', subtype='html', filename=f"theme_{nom}.html")
 
     with smtplib.SMTP_SSL('smtp.gmail.com', 465) as smtp:
         smtp.login(os.getenv("SMTP_USER"), os.getenv("SMTP_PASS"))
         smtp.send_message(msg)
+
+traductions = {
+    "Sun": "Soleil", "Moon": "Lune", "Mercury": "Mercure", "Venus": "Vénus", "Mars": "Mars",
+    "Jupiter": "Jupiter", "Saturn": "Saturne", "Uranus": "Uranus", "Neptune": "Neptune", "Pluto": "Pluton",
+    "North Node": "Nœud Nord", "South Node": "Nœud Sud",
+    "Aries": "Bélier", "Taurus": "Taureau", "Gemini": "Gémeaux", "Cancer": "Cancer",
+    "Leo": "Lion", "Virgo": "Vierge", "Libra": "Balance", "Scorpio": "Scorpion",
+    "Sagittarius": "Sagittaire", "Capricorn": "Capricorne", "Aquarius": "Verseau", "Pisces": "Poissons"
+}
 
 # === SAISIE ===
 
@@ -198,38 +196,29 @@ else:
 
             st.success("✨ Thème généré avec succès ! Découvre ton interprétation ci-dessous.")
 
-# === Email PDF ===
+# ✅ Affichage persistant si thème généré
 
-email_user = st.text_input("📨 Entre ton adresse e-mail pour recevoir ton thème")
-if st.button("Envoyer mon thème par mail") and email_user:
-    chemin_pdf = generer_pdf_avec_visuel_weasy(
+if all(k in st.session_state for k in ("resume_theme", "planet_lines", "interpretation", "chart_url")):
+    chemin_html = generer_fichier_html(
         nom,
         st.session_state["resume_theme"],
         st.session_state["planet_lines"],
         st.session_state["interpretation"],
         st.session_state["chart_url"]
     )
-    envoyer_email(email_user, chemin_pdf, nom)
-    st.success("✅ Ton thème a été envoyé par e-mail avec succès !")
 
-# === Envoi email avec pdf ===
+    with open(chemin_html, "rb") as file:
+        st.download_button(
+            label="📥 Télécharger mon thème en HTML",
+            data=file,
+            file_name=f"theme_{nom}.html",
+            mime="text/html"
+        )
 
-import smtplib
-from email.message import EmailMessage
-
-def envoyer_email(destinataire, chemin_pdf, nom):
-    msg = EmailMessage()
-    msg['Subject'] = f"Ton thème natal - {nom}"
-    msg['From'] = os.getenv("EMAIL_EXPEDITEUR")
-    msg['To'] = destinataire
-    msg.set_content(f"Bonjour {nom},\n\nVoici ton thème astrologique en pièce jointe. 🌌")
-
-    with open(chemin_pdf, 'rb') as f:
-        msg.add_attachment(f.read(), maintype='application', subtype='pdf', filename=f"theme_{nom}.pdf")
-
-    with smtplib.SMTP_SSL('smtp.gmail.com', 465) as smtp:
-        smtp.login(os.getenv("EMAIL_EXPEDITEUR"), os.getenv("EMAIL_PASSWORD"))
-        smtp.send_message(msg)
+    email_user = st.text_input("📨 Entre ton adresse e-mail pour recevoir ton thème")
+    if st.button("Envoyer mon thème par mail") and email_user:
+        envoyer_email(email_user, chemin_html, nom)
+        st.success("✅ Ton thème a été envoyé par e-mail avec succès !")
 
 # === AFFICHAGE PERSISTANT
 
