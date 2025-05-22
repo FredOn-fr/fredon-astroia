@@ -66,6 +66,64 @@ traductions = {
     "Sagittarius": "Sagittaire", "Capricorn": "Capricorne", "Aquarius": "Verseau", "Pisces": "Poissons"
 }
 
+from weasyprint import HTML
+
+def generer_pdf_avec_visuel_weasy(nom, resume, planetes, interpretation, chart_url):
+    contenu_html = f"""
+    <html>
+    <head>
+        <meta charset="UTF-8">
+        <style>
+            body {{
+                font-family: Arial, sans-serif;
+                padding: 20px;
+                color: #333;
+            }}
+            h1, h2 {{
+                color: #4a148c;
+            }}
+            img {{
+                width: 100%;
+                max-width: 400px;
+                margin: 20px 0;
+            }}
+        </style>
+    </head>
+    <body>
+        <h1>Thème natal de {nom}</h1>
+        <p><strong>Résumé :</strong> {resume}</p>
+        <h2>🖼️ Carte du ciel</h2>
+        <img src="{chart_url}" alt="Carte du ciel">
+        <h2>🪐 Positions des planètes</h2>
+        <ul>
+            {''.join(f"<li>{p}</li>" for p in planetes)}
+        </ul>
+        <h2>✨ Interprétation poétique</h2>
+        <p>{interpretation.replace('\n', '<br>')}</p>
+    </body>
+    </html>
+    """
+    chemin_pdf = f"theme_{nom}.pdf"
+    HTML(string=contenu_html).write_pdf(chemin_pdf)
+    return chemin_pdf
+
+import smtplib
+from email.message import EmailMessage
+
+def envoyer_email(destinataire, chemin_pdf, nom):
+    msg = EmailMessage()
+    msg['Subject'] = f"Ton thème natal - {nom}"
+    msg['From'] = os.getenv("EMAIL_EXPEDITEUR")
+    msg['To'] = destinataire
+    msg.set_content(f"Bonjour {nom},\n\nVoici ton thème astrologique en pièce jointe. 🌌")
+
+    with open(chemin_pdf, 'rb') as f:
+        msg.add_attachment(f.read(), maintype='application', subtype='pdf', filename=f"theme_{nom}.pdf")
+
+    with smtplib.SMTP_SSL('smtp.gmail.com', 465) as smtp:
+        smtp.login(os.getenv("SMTP_USER"), os.getenv("SMTP_PASS"))
+        smtp.send_message(msg)
+
 # === SAISIE ===
 
 nom = st.text_input("Ton prénom ou pseudo")
@@ -100,44 +158,78 @@ else:
     }
 
     if st.button("🎁 Générer mon thème complet"):
-        with st.spinner("🔮 Génération de votre thème en cours..."):
-            auth = HTTPBasicAuth(USER_ID, API_KEY)
-            base_url = "https://json.astrologyapi.com/v1/"
+     with st.spinner("🔮 Génération de votre thème en cours..."):
+        auth = HTTPBasicAuth(USER_ID, API_KEY)
+        base_url = "https://json.astrologyapi.com/v1/"
 
-            chart = requests.post(base_url + "natal_wheel_chart", auth=auth, json=birth_data)
-            if chart.status_code == 200:
-                st.session_state["chart_url"] = chart.json()["chart_url"]
+        chart = requests.post(base_url + "natal_wheel_chart", auth=auth, json=birth_data)
+        if chart.status_code == 200:
+            st.session_state["chart_url"] = chart.json()["chart_url"]
 
-            planets = requests.post(base_url + "planets/tropical", auth=auth, json={**birth_data, "hsys": "placidus"})
-            planet_lines = []
-            if planets.status_code == 200:
-                for p in planets.json():
-                    name = traductions.get(p["name"], p["name"])
-                    sign = traductions.get(p["sign"], p["sign"])
-                    house = p.get("house", "?")
-                    planet_lines.append(f"{name} en {sign}, maison {house}")
-                st.session_state["planet_lines"] = planet_lines
+        planets = requests.post(base_url + "planets/tropical", auth=auth, json={**birth_data, "hsys": "placidus"})
+        planet_lines = []
+        if planets.status_code == 200:
+            for p in planets.json():
+                name = traductions.get(p["name"], p["name"])
+                sign = traductions.get(p["sign"], p["sign"])
+                house = p.get("house", "?")
+                planet_lines.append(f"{name} en {sign}, maison {house}")
+            st.session_state["planet_lines"] = planet_lines
 
             resume_theme = f"Voici le thème natal de {nom}, né le {day}/{month}/{year} à {hour:02d}:{minute:02d} à {location_name}."
-            resume_theme += "Planètes : " + ", ".join(planet_lines) + "."
+            resume_theme += " Planètes : " + ", ".join(planet_lines) + "."
 
-            prompt = resume_theme + "Fais une interprétation astrologique poétique, bienveillante et inspirante de ce thème."
+            prompt = resume_theme + " Fais une interprétation astrologique poétique, bienveillante et inspirante de ce thème."
             interpretation = openai.chat.completions.create(
                 model="gpt-4-turbo",
                 messages=[
                     {"role": "system", "content": "Tu es un astrologue poétique et bienveillant."},
                     {"role": "user", "content": prompt}
                 ]
-        ).choices[0].message.content
+            ).choices[0].message.content
 
-        st.session_state["resume_theme"] = resume_theme
-        st.session_state["interpretation"] = interpretation
-        st.success("✨ Thème généré avec succès ! Découvre ton interprétation ci-dessous.")
-        st.session_state["chat_messages"] = [
-            {"role": "system", "content": "Tu es un astrologue poétique et bienveillant."},
-            {"role": "user", "content": resume_theme},
-            {"role": "assistant", "content": interpretation}
-        ]
+            st.session_state["resume_theme"] = resume_theme
+            st.session_state["interpretation"] = interpretation
+            st.session_state["chat_messages"] = [
+                {"role": "system", "content": "Tu es un astrologue poétique et bienveillant."},
+                {"role": "user", "content": resume_theme},
+                {"role": "assistant", "content": interpretation}
+            ]
+
+            st.success("✨ Thème généré avec succès ! Découvre ton interprétation ci-dessous.")
+
+# === Email PDF ===
+
+email_user = st.text_input("📨 Entre ton adresse e-mail pour recevoir ton thème")
+if st.button("Envoyer mon thème par mail") and email_user:
+    chemin_pdf = generer_pdf_avec_visuel_weasy(
+        nom,
+        st.session_state["resume_theme"],
+        st.session_state["planet_lines"],
+        st.session_state["interpretation"],
+        st.session_state["chart_url"]
+    )
+    envoyer_email(email_user, chemin_pdf, nom)
+    st.success("✅ Ton thème a été envoyé par e-mail avec succès !")
+
+# === Envoi email avec pdf ===
+
+import smtplib
+from email.message import EmailMessage
+
+def envoyer_email(destinataire, chemin_pdf, nom):
+    msg = EmailMessage()
+    msg['Subject'] = f"Ton thème natal - {nom}"
+    msg['From'] = os.getenv("EMAIL_EXPEDITEUR")
+    msg['To'] = destinataire
+    msg.set_content(f"Bonjour {nom},\n\nVoici ton thème astrologique en pièce jointe. 🌌")
+
+    with open(chemin_pdf, 'rb') as f:
+        msg.add_attachment(f.read(), maintype='application', subtype='pdf', filename=f"theme_{nom}.pdf")
+
+    with smtplib.SMTP_SSL('smtp.gmail.com', 465) as smtp:
+        smtp.login(os.getenv("EMAIL_EXPEDITEUR"), os.getenv("EMAIL_PASSWORD"))
+        smtp.send_message(msg)
 
 # === AFFICHAGE PERSISTANT
 
