@@ -99,20 +99,6 @@ def generer_fichier_html(nom, resume, planetes, interpretation, chart_url):
         f.write(contenu_html)
     return chemin_html
 
-def envoyer_email(destinataire, chemin_html, nom):
-    msg = EmailMessage()
-    msg['Subject'] = f"FredOn-AstroIA - Ton thème natal - {nom}"
-    msg['From'] = os.getenv("SMTP_USER")
-    msg['To'] = destinataire
-    msg.set_content(f"Bonjour {nom},\n\nVoici ton thème astrologique en pièce jointe. 🌌")
-
-    with open(chemin_html, 'rb') as f:
-        msg.add_attachment(f.read(), maintype='text', subtype='html', filename=f"theme_{nom}.html")
-
-    with smtplib.SMTP_SSL('smtp.gmail.com', 465) as smtp:
-        smtp.login(os.getenv("SMTP_USER"), os.getenv("SMTP_PASS"))
-        smtp.send_message(msg)
-
 def generer_discussion_html(nom, messages):
     contenu_html = f"""
     <html>
@@ -339,7 +325,7 @@ if all(k in st.session_state for k in ("resume_theme", "planet_lines", "interpre
 
         st.rerun()
 
-# === Export et envoi discussion Astro-IA ===
+# === Export et téléchargement de la discussion Astro-IA ===
 
     if st.session_state["chat_messages"]:
         chemin_discussion = generer_discussion_html(nom, st.session_state["chat_messages"])
@@ -352,8 +338,3 @@ if all(k in st.session_state for k in ("resume_theme", "planet_lines", "interpre
                 mime="text/html"
             )
 
-        email_discussion = st.text_input("📨 Adresse e-mail pour recevoir ta discussion")
-
-    if st.button("Envoyer la discussion par mail", key="email_discussion_input") and email_discussion:
-            envoyer_email(email_discussion, chemin_discussion, nom)
-            st.success("✅ La discussion a été envoyée par e-mail avec succès !")
