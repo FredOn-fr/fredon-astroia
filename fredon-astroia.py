@@ -66,7 +66,7 @@ def get_timezone(lat, lon, year, month, day):
         return float(response.json()["timezone"])
     return 1.0
 
-def generer_fichier_html(nom, resume, planetes, interpretation, chart_url):
+def generer_fichier_html(nom, resume, planetes, aspects, interpretation, chart_url):
     contenu_html = f"""
     <html>
     <head>
@@ -96,6 +96,11 @@ def generer_fichier_html(nom, resume, planetes, interpretation, chart_url):
         <ul>
             {''.join(f"<li>{p}</li>" for p in planetes)}
         </ul>
+        <h2>🪐 Aspects planétaires</h2>
+        <ul>
+            {''.join(f"<li>{a}</li>" for a in aspects)}
+        </ul>
+
         <h2>✨ Interprétation poétique</h2>
         <p>{interpretation.replace('\n', '<br>')}</p>
     </body>
@@ -135,10 +140,24 @@ def generer_discussion_html(nom, messages):
 traductions = {
     "Sun": "Soleil", "Moon": "Lune", "Mercury": "Mercure", "Venus": "Vénus", "Mars": "Mars",
     "Jupiter": "Jupiter", "Saturn": "Saturne", "Uranus": "Uranus", "Neptune": "Neptune", "Pluto": "Pluton",
-    "North Node": "Nœud Nord", "South Node": "Nœud Sud",
+    "North Node": "Nœud Nord", "South Node": "Nœud Sud", "Midheaven": "Milieu du Ciel",
     "Aries": "Bélier", "Taurus": "Taureau", "Gemini": "Gémeaux", "Cancer": "Cancer",
     "Leo": "Lion", "Virgo": "Vierge", "Libra": "Balance", "Scorpio": "Scorpion",
     "Sagittarius": "Sagittaire", "Capricorn": "Capricorne", "Aquarius": "Verseau", "Pisces": "Poissons"
+}
+
+traductions_aspects = {
+    "conjunction": "conjonction",
+    "sextile": "sextile",
+    "square": "carré",
+    "trine": "trigone",
+    "opposition": "opposition",
+    "quincunx": "quinconce",
+    "semisextile": "semi-sextile",
+    "semisquare": "semi-carré",
+    "sesquiquadrate": "sesquicarré",
+    "quintile": "quintile",
+    "biquintile": "biquintile"
 }
 
 def envoyer_conversation_par_mail(destinataire, nom, messages):
@@ -236,8 +255,31 @@ else:
                     planet_lines.append(f"{name} en {sign}, maison {house}")
                 st.session_state["planet_lines"] = planet_lines
 
+            # ➤ Récupération des aspects avec western_horoscope
+            western = requests.post(base_url + "western_horoscope", auth=auth, json=birth_data)
+            aspects_lines = []
+            if western.status_code == 200:
+                horoscope_data = western.json()
+
+                aspects = horoscope_data.get("aspects", [])
+                for asp in aspects:
+                    planets = asp.get("planets", ["?", "?"])
+                    if len(planets) == 2:
+                        planet1 = traductions.get(asp.get("aspecting_planet", "?"), asp.get("aspecting_planet", "?"))
+                        planet2 = traductions.get(asp.get("aspected_planet", "?"), asp.get("aspected_planet", "?"))
+                        aspect_type_en = str(asp.get("type", "aspect inconnu")).lower()
+                        aspect_type = traductions_aspects.get(aspect_type_en, aspect_type_en)
+                        orb = asp.get("orb", "?")
+                        aspects_lines.append(f"{planet1} {aspect_type} {planet2} (orbe {orb:.1f}°)")
+                    else:
+                        st.warning(f"Aspects mal formé : {asp}")
+
+                st.session_state["aspects_lines"] = aspects_lines
+
                 resume_theme = f"Voici le thème natal de {nom}, né le {day}/{month}/{year} à {hour:02d}:{minute:02d} à {location_name}."
                 resume_theme += " Planètes : " + ", ".join(planet_lines) + "."
+                resume_theme += " Aspects : " + ", ".join(aspects_lines) + "."
+
 
                 if style_ia == "🌙 Poétique et inspirante":
                     system_prompt = "Tu es un astrologue poétique et bienveillant. Tu ne réponds pas à des questions sur le thème du suicide, de la mort ou de la drogue. Si l'utilisateur présente des difficultés psychologiques ou maladives, le diriger vers les instances médicales compétentes...."
@@ -261,6 +303,7 @@ else:
                     {"role": "user", "content": resume_theme},
                     {"role": "assistant", "content": interpretation}
                 ]
+            
 
                 st.success("✨ Thème généré avec succès ! Découvre ton interprétation ci-dessous.")
             
@@ -271,6 +314,7 @@ if all(k in st.session_state for k in ("resume_theme", "planet_lines", "interpre
         nom,
         st.session_state["resume_theme"],
         st.session_state["planet_lines"],
+        st.session_state["aspects_lines"],
         st.session_state["interpretation"],
         st.session_state["chart_url"]
     )
@@ -283,11 +327,6 @@ if all(k in st.session_state for k in ("resume_theme", "planet_lines", "interpre
             mime="text/html"
         )
 
-    email_user = st.text_input("📨 Entre ton adresse e-mail pour recevoir ton thème")
-    if st.button("Envoyer mon thème par mail", key="send_theme_button") and email_user:
-        envoyer_email(email_user, chemin_html, nom)
-        st.success("✅ Ton thème a été envoyé par e-mail avec succès !")
-
 # === AFFICHAGE PERSISTANT
 
 if "chart_url" in st.session_state:
@@ -298,6 +337,11 @@ if "planet_lines" in st.session_state:
     st.subheader("🌟 Positions des planètes (signes et maisons)")
     for line in st.session_state["planet_lines"]:
         st.write(f"🪐 {line}")
+
+if "aspects_lines" in st.session_state:
+    st.subheader("🪐 Aspects planétaires")
+    for line in st.session_state["aspects_lines"]:
+        st.write(f"🔹 {line}")
 
 if "interpretation" in st.session_state:
     if style_ia == "🌙 Poétique et inspirante":
