@@ -1,9 +1,12 @@
 
 
 import streamlit as st
+st.set_page_config(page_title="FredOn-AstroIA", layout="centered")
+
 import requests
 import openai
 import os
+import time
 from dotenv import load_dotenv
 from requests.auth import HTTPBasicAuth
 import smtplib
@@ -15,7 +18,11 @@ openai.api_key = os.getenv("OPENAI_API_KEY")
 USER_ID = os.getenv("ASTROLOGYAPI_USER_ID")
 API_KEY = os.getenv("ASTROLOGYAPI_API_KEY")
 
-st.set_page_config(page_title="FredOn-AstroIA", layout="centered")
+# === HONEYPOT + DÉLAI ANTI-SPAM ===
+honey = st.text_input("Ton signe préféré (ne rien écrire ici)", key="honey", label_visibility="collapsed")
+if "start_time" not in st.session_state:
+    st.session_state["start_time"] = time.time()
+
 st.title("🔮 FredOn-AstroIA : Thème natal astrologique")
 
 # === FONCTIONS ===
@@ -190,68 +197,73 @@ style_ia = st.radio(
     ["🌙 Poétique et inspirante", "🧠 Classique et analytique"],
     index=0
 )
-lat, lon, location_name = get_coords_from_google(ville)
-if lat is None or lon is None:
-    st.error("Ville introuvable.")
+# === FILTRAGE SPAM ===
+if honey.strip() != "":
+    st.error("🚫 Accès refusé. Suspicion de robot.")
+elif time.time() - st.session_state["start_time"] < 2:
+    st.warning("⏱️ Tu vas trop vite. Attends quelques secondes.")
 else:
-    tzone = get_timezone(lat, lon, year, month, day)
-    st.success(f"📍 Localisation : {location_name}")
-    st.write(f"🌐 Lat : {lat}, Lon : {lon} | UTC{tzone:+.1f}")
+    lat, lon, location_name = get_coords_from_google(ville)
+    if lat is None or lon is None:
+        st.error("Ville introuvable.")
+    else:
+        tzone = get_timezone(lat, lon, year, month, day)
+        st.success(f"📍 Localisation : {location_name}")
+        st.write(f"🌐 Lat : {lat}, Lon : {lon} | UTC{tzone:+.1f}")
 
-    birth_data = {
-        "day": int(day), "month": int(month), "year": int(year),
-        "hour": int(hour), "min": int(minute),
-        "lat": lat, "lon": lon, "tzone": tzone
-    }
+        birth_data = {
+            "day": int(day), "month": int(month), "year": int(year),
+            "hour": int(hour), "min": int(minute),
+            "lat": lat, "lon": lon, "tzone": tzone
+        }
 
-    if st.button("🎁 Générer mon thème complet"):
-     with st.spinner("🔮 Génération de votre thème en cours..."):
-        auth = HTTPBasicAuth(USER_ID, API_KEY)
-        base_url = "https://json.astrologyapi.com/v1/"
+        if st.button("🎁 Générer mon thème complet"):
+         with st.spinner("🔮 Génération de votre thème en cours..."):
+            auth = HTTPBasicAuth(USER_ID, API_KEY)
+            base_url = "https://json.astrologyapi.com/v1/"
 
-        chart = requests.post(base_url + "natal_wheel_chart", auth=auth, json=birth_data)
-        if chart.status_code == 200:
-            st.session_state["chart_url"] = chart.json()["chart_url"]
+            chart = requests.post(base_url + "natal_wheel_chart", auth=auth, json=birth_data)
+            if chart.status_code == 200:
+                st.session_state["chart_url"] = chart.json()["chart_url"]
+ 
+            planets = requests.post(base_url + "planets/tropical", auth=auth, json={**birth_data, "hsys": "placidus"})
+            planet_lines = []
+            if planets.status_code == 200:
+                for p in planets.json():
+                    name = traductions.get(p["name"], p["name"])
+                    sign = traductions.get(p["sign"], p["sign"])
+                    house = p.get("house", "?")
+                    planet_lines.append(f"{name} en {sign}, maison {house}")
+                st.session_state["planet_lines"] = planet_lines
 
-        planets = requests.post(base_url + "planets/tropical", auth=auth, json={**birth_data, "hsys": "placidus"})
-        planet_lines = []
-        if planets.status_code == 200:
-            for p in planets.json():
-                name = traductions.get(p["name"], p["name"])
-                sign = traductions.get(p["sign"], p["sign"])
-                house = p.get("house", "?")
-                planet_lines.append(f"{name} en {sign}, maison {house}")
-            st.session_state["planet_lines"] = planet_lines
+                resume_theme = f"Voici le thème natal de {nom}, né le {day}/{month}/{year} à {hour:02d}:{minute:02d} à {location_name}."
+                resume_theme += " Planètes : " + ", ".join(planet_lines) + "."
 
-            resume_theme = f"Voici le thème natal de {nom}, né le {day}/{month}/{year} à {hour:02d}:{minute:02d} à {location_name}."
-            resume_theme += " Planètes : " + ", ".join(planet_lines) + "."
+                if style_ia == "🌙 Poétique et inspirante":
+                    system_prompt = "Tu es un astrologue poétique et bienveillant. Tu ne réponds pas à des questions sur le thème du suicide, de la mort ou de la drogue. Si l'utilisateur présente des difficultés psychologiques ou maladives, le diriger vers les instances médicales compétentes...."
+                    user_prompt = resume_theme + " Fais une interprétation astrologique poétique, bienveillante et inspirante de ce thème."
+                else:
+                    system_prompt = "Tu es un astrologue classique, rigoureux et pédagogue.Tu ne réponds pas à des questions sur le thème du suicide, de la mort ou de la drogue. Si l'utilisateur présente des difficultés psychologiques ou maladives, le diriger vers les instances médicales compétentes."
+                    user_prompt = resume_theme + " Donne une interprétation astrologique classique, structurée et précise de ce thème."
 
-            if style_ia == "🌙 Poétique et inspirante":
-                system_prompt = "Tu es un astrologue poétique et bienveillant. Tu ne réponds pas à des questions sur le thème du suicide, de la mort ou de la drogue. Si l'utilisateur présente des difficultés psychologiques ou maladives, le diriger vers les instances médicales compétentes...."
-                user_prompt = resume_theme + " Fais une interprétation astrologique poétique, bienveillante et inspirante de ce thème."
-            else:
-                system_prompt = "Tu es un astrologue classique, rigoureux et pédagogue.Tu ne réponds pas à des questions sur le thème du suicide, de la mort ou de la drogue. Si l'utilisateur présente des difficultés psychologiques ou maladives, le diriger vers les instances médicales compétentes."
-                user_prompt = resume_theme + " Donne une interprétation astrologique classique, structurée et précise de ce thème."
+                interpretation = openai.chat.completions.create(
+                    model="gpt-4-turbo",
+                    messages=[
+                        {"role": "system", "content": system_prompt},
+                        {"role": "user", "content": user_prompt}
+                    ]
+                ).choices[0].message.content
 
-            interpretation = openai.chat.completions.create(
-                model="gpt-4-turbo",
-                messages=[
-                    {"role": "system", "content": system_prompt},
-                    {"role": "user", "content": user_prompt}
+                st.session_state["resume_theme"] = resume_theme
+                st.session_state["interpretation"] = interpretation
+                st.session_state["chat_messages"] = [
+                    {"role": "system", "content": "Tu es un astrologue poétique et bienveillant, tu connais le thème astral de l'utilisateur. Tu ne réponds pas à des questions sur le thème du suicide, de la mort ou de la drogue. Si l'utilisateur présente des difficultés psychologiques ou maladives, le diriger vers les instances médicales compétentes."},
+                    {"role": "user", "content": resume_theme},
+                    {"role": "assistant", "content": interpretation}
                 ]
-            ).choices[0].message.content
 
-            st.session_state["resume_theme"] = resume_theme
-            st.session_state["interpretation"] = interpretation
-            st.session_state["chat_messages"] = [
-                {"role": "system", "content": "Tu es un astrologue poétique et bienveillant, tu connais le thème astral de l'utilisateur. Tu ne réponds pas à des questions sur le thème du suicide, de la mort ou de la drogue. Si l'utilisateur présente des difficultés psychologiques ou maladives, le diriger vers les instances médicales compétentes."},
-                {"role": "user", "content": resume_theme},
-                {"role": "assistant", "content": interpretation}
-            ]
-
-            st.success("✨ Thème généré avec succès ! Découvre ton interprétation ci-dessous.")
+                st.success("✨ Thème généré avec succès ! Découvre ton interprétation ci-dessous.")
             
-
 # ✅ Affichage persistant si thème généré
 
 if all(k in st.session_state for k in ("resume_theme", "planet_lines", "interpretation", "chart_url", "chat_messages")):
