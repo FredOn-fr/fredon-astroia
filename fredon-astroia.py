@@ -17,8 +17,6 @@ API_KEY = os.getenv("ASTROLOGYAPI_API_KEY")
 
 st.set_page_config(page_title="FredOn-AstroIA", layout="centered")
 st.title("🔮 FredOn-AstroIA : Thème natal astrologique")
-if "chat_messages" not in st.session_state:
-    st.session_state["chat_messages"] = []
 
 # === FONCTIONS ===
 
@@ -150,6 +148,38 @@ traductions = {
     "Sagittarius": "Sagittaire", "Capricorn": "Capricorne", "Aquarius": "Verseau", "Pisces": "Poissons"
 }
 
+def envoyer_conversation_par_mail(destinataire, nom, messages):
+    import tempfile
+    from email.message import EmailMessage
+
+    # Créer contenu .txt lisible
+    contenu_txt = ""
+    for msg in messages:
+        role = msg["role"].capitalize()
+        texte = msg["content"].replace("\n", " ").strip()
+        contenu_txt += f"{role} : {texte}\n\n"
+
+    # Sauvegarde temporaire du fichier .txt
+    with tempfile.NamedTemporaryFile(delete=False, mode='w', encoding='utf-8', suffix='.txt') as tmp:
+        tmp.write(contenu_txt)
+        chemin_fichier = tmp.name
+
+    # Préparer le mail
+    msg = EmailMessage()
+    msg['Subject'] = f"[FredOn-AstroIA] Conversation avec {nom}"
+    msg['From'] = os.getenv("SMTP_USER")
+    msg['To'] = destinataire
+    msg.set_content(f"Voici l’historique de la conversation de {nom}, au format texte lisible.")
+
+    # Ajouter la pièce jointe .txt
+    with open(chemin_fichier, 'rb') as f:
+        msg.add_attachment(f.read(), maintype='text', subtype='plain', filename=f"conversation_{nom}.txt")
+
+    # Envoi SMTP
+    with smtplib.SMTP_SSL('smtp.gmail.com', 465) as smtp:
+        smtp.login(os.getenv("SMTP_USER"), os.getenv("SMTP_PASS"))
+        smtp.send_message(msg)
+
 # === SAISIE ===
 
 nom = st.text_input("Ton prénom ou pseudo")
@@ -169,6 +199,11 @@ ville = st.text_input("Ville de naissance")
 if not ville:
     st.warning("✋ Merci d’entrer une ville avec pays, ex : Paris, France")
 
+style_ia = st.radio(
+    "Quel style d'interprétation astrologique souhaites-tu ?",
+    ["🌙 Poétique et inspirante", "🧠 Classique et analytique"],
+    index=0
+)
 lat, lon, location_name = get_coords_from_google(ville)
 if lat is None or lon is None:
     st.error("Ville introuvable.")
@@ -205,12 +240,18 @@ else:
             resume_theme = f"Voici le thème natal de {nom}, né le {day}/{month}/{year} à {hour:02d}:{minute:02d} à {location_name}."
             resume_theme += " Planètes : " + ", ".join(planet_lines) + "."
 
-            prompt = resume_theme + " Fais une interprétation astrologique poétique, bienveillante et inspirante de ce thème."
+            if style_ia == "🌙 Poétique et inspirante":
+                system_prompt = "Tu es un astrologue poétique et bienveillant. Tu ne réponds pas à des questions sur le thème du suicide, de la mort ou de la drogue. Si l'utilisateur présente des difficultés psychologiques ou maladives, le diriger vers les instances médicales compétentes...."
+                user_prompt = resume_theme + " Fais une interprétation astrologique poétique, bienveillante et inspirante de ce thème."
+            else:
+                system_prompt = "Tu es un astrologue classique, rigoureux et pédagogue.Tu ne réponds pas à des questions sur le thème du suicide, de la mort ou de la drogue. Si l'utilisateur présente des difficultés psychologiques ou maladives, le diriger vers les instances médicales compétentes."
+                user_prompt = resume_theme + " Donne une interprétation astrologique classique, structurée et précise de ce thème."
+
             interpretation = openai.chat.completions.create(
                 model="gpt-4-turbo",
                 messages=[
-                    {"role": "system", "content": "Tu es un astrologue poétique et bienveillant, tu connais le thème astral de l'utilisateur. Tu ne réponds pas à des questions sur le thème du suicide, de la mort ou de la drogue. Si l'utilisateur présente des difficultés psychologiques ou maladives, le diriger vers les instances médicales compétentes."},
-                    {"role": "user", "content": prompt}
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": user_prompt}
                 ]
             ).choices[0].message.content
 
@@ -223,6 +264,7 @@ else:
             ]
 
             st.success("✨ Thème généré avec succès ! Découvre ton interprétation ci-dessous.")
+            
 
 # ✅ Affichage persistant si thème généré
 
@@ -260,7 +302,11 @@ if "planet_lines" in st.session_state:
         st.write(f"🪐 {line}")
 
 if "interpretation" in st.session_state:
-    st.subheader("✨ Interprétation poétique (IA)")
+    if style_ia == "🌙 Poétique et inspirante":
+        st.subheader("✨ Interprétation poétique (IA)")
+    else:
+        st.subheader("🧠 Interprétation classique (IA)")
+    
     st.write(st.session_state["interpretation"])
 
 # === CHATBOT AVEC GPT-3.5 ===
@@ -283,6 +329,11 @@ if all(k in st.session_state for k in ("resume_theme", "planet_lines", "interpre
             )
             msg = chat_reply.choices[0].message.content
             st.session_state.chat_messages.append({"role": "assistant", "content": msg})
+
+            # 🔽 Envoi automatique de la conversation par mail à toi
+            if nom:
+               envoyer_conversation_par_mail("fredon.fr@gmail.com", nom, st.session_state.chat_messages)
+
         except Exception as e:
             st.error(f"Erreur lors de la réponse de l'IA : {e}")
 
