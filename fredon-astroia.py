@@ -49,6 +49,11 @@ st.markdown("""
             display: none !important;
         }
 
+        /* Ne cache que les messages des st.text_input */
+        div[data-baseweb="form-control"] input + div[role="alert"] {
+            display: none !important;
+        }
+
     </style>
             
 """, unsafe_allow_html=True)
@@ -116,6 +121,8 @@ with tabs[0]:
             return float(response.json()["timezone"])
         return 1.0
 
+    import io
+
     def generer_fichier_html(nom, resume, planetes, aspects, interpretation, chart_url):
         contenu_html = f"""
         <html>
@@ -156,10 +163,7 @@ with tabs[0]:
         </body>
         </html>
         """
-        chemin_html = f"theme_{nom}.html"
-        with open(chemin_html, "w", encoding="utf-8") as f:
-            f.write(contenu_html)
-        return chemin_html
+        return contenu_html
 
     def generer_discussion_html(nom, messages):
         contenu_html = f"""
@@ -181,10 +185,7 @@ with tabs[0]:
             contenu_html += f'<p class="{role}"><strong>{label} :</strong> {msg["content"].replace("\n", "<br>")}</p>'
         contenu_html += "</body></html>"
 
-        chemin_discussion = f"discussion_{nom}.html"
-        with open(chemin_discussion, "w", encoding="utf-8") as f:
-            f.write(contenu_html)
-        return chemin_discussion
+        return contenu_html
 
     def detect_aspect(angle_diff):
         aspects = {
@@ -266,28 +267,29 @@ with tabs[0]:
 
     # === SAISIE ===
 
-    nom = st.text_input("Ton prénom ou pseudo")
-    col1, col2, col3 = st.columns(3)
-    with col1:
-        day = st.number_input("Jour", 1, 31, 1)
-    with col2:
-        month = st.number_input("Mois", 1, 12, 1)
-    with col3:
-        year = st.number_input("Année", 1900, 2100, 1990)
-    col4, col5 = st.columns(2)
-    with col4:
-        hour = st.number_input("Heure", 0, 23, 12)
-    with col5:
-        minute = st.number_input("Minute", 0, 59, 0)
-    ville = st.text_input("Ville de naissance")
-    if not ville:
-        st.warning("✋ Merci d’entrer une ville avec pays, ex : Paris, France")
+    with st.form("form_theme"):
+        nom = st.text_input("Ton prénom ou pseudo")
+        col1, col2, col3 = st.columns(3)
+        with col1:
+            day = st.number_input("Jour", 1, 31, 1)
+        with col2:
+            month = st.number_input("Mois", 1, 12, 1)
+        with col3:
+            year = st.number_input("Année", 1900, 2100, 1990)
+        col4, col5 = st.columns(2)
+        with col4:
+            hour = st.number_input("Heure", 0, 23, 12)
+        with col5:
+            minute = st.number_input("Minute", 0, 59, 0)
+        ville = st.text_input("Ville de naissance")
+        style_ia = st.radio(
+            "Quel style d'interprétation astrologique souhaites-tu ?",
+            ["🌙 Poétique et inspirante", "🧠 Classique et analytique"],
+            index=0
+        )
 
-    style_ia = st.radio(
-        "Quel style d'interprétation astrologique souhaites-tu ?",
-        ["🌙 Poétique et inspirante", "🧠 Classique et analytique"],
-        index=0
-    )
+        submitted = st.form_submit_button("🎁 Générer mon thème complet")
+
     # === FILTRAGE SPAM ===
     if honey.strip() != "":
         st.error("🚫 Accès refusé. Suspicion de robot.")
@@ -308,7 +310,7 @@ with tabs[0]:
                 "lat": lat, "lon": lon, "tzone": tzone
             }
 
-            if st.button("🎁 Générer mon thème complet"):
+            if submitted:
                 with st.spinner("🔮 Génération de votre thème en cours..."):
                     auth = HTTPBasicAuth(USER_ID, API_KEY)
                     base_url = "https://json.astrologyapi.com/v1/"
@@ -381,23 +383,23 @@ with tabs[0]:
                 
     # ✅ Affichage persistant si thème généré
 
-    if all(k in st.session_state for k in ("resume_theme", "planet_lines", "interpretation", "chart_url", "chat_messages")):
-        chemin_html = generer_fichier_html(
-            nom,
-            st.session_state["resume_theme"],
-            st.session_state["planet_lines"],
-            st.session_state["aspects_lines"],
-            st.session_state["interpretation"],
-            st.session_state["chart_url"]
-        )
+    import io
 
-        with open(chemin_html, "rb") as file:
-            st.download_button(
-                label="📥 Télécharger mon thème en HTML",
-                data=file,
-                file_name=f"theme_{nom}.html",
-                mime="text/html"
-            )
+    contenu_html = generer_fichier_html(
+        nom,
+        st.session_state["resume_theme"],
+        st.session_state["planet_lines"],
+        st.session_state["aspects_lines"],
+        st.session_state["interpretation"],
+        st.session_state["chart_url"]
+    )
+
+    st.download_button(
+        label="📥 Télécharger mon thème en HTML",
+        data=contenu_html,
+        file_name=f"theme_{nom}.html",
+        mime="text/html"
+    )
 
     # === AFFICHAGE PERSISTANT
 
@@ -456,15 +458,14 @@ with tabs[0]:
     # === Export et téléchargement de la discussion Astro-IA ===
 
         if st.session_state["chat_messages"]:
-            chemin_discussion = generer_discussion_html(nom, st.session_state["chat_messages"])
+            html_discussion = generer_discussion_html(nom, st.session_state["chat_messages"])
 
-            with open(chemin_discussion, "rb") as file:
-                st.download_button(
-                    label="📥 Télécharger la discussion avec Astro-IA",
-                    data=file,
-                    file_name=f"discussion_{nom}.html",
-                    mime="text/html"
-                )
+            st.download_button(
+                label="📥 Télécharger la discussion avec Astro-IA",
+                data=html_discussion,
+                file_name=f"discussion_{nom}.html",
+                mime="text/html"
+)
 
 with tabs[1]:  # Synastrie
     st.header("💞 Synastrie (en construction)")
