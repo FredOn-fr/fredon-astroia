@@ -60,7 +60,7 @@ st.markdown("""
             
 """, unsafe_allow_html=True)
 
-tabs = st.tabs(["Thème natal", "Synastrie 🔧", "Transits 🔧"])
+tabs = st.tabs(["Thème natal", "Synastrie 🔧", "Transits 🔧", "📬 Me contacter"])
 
 with tabs[0]:
     st.markdown("🧬 **Bienvenue dans l’analyse de ton thème natal**")
@@ -266,6 +266,14 @@ with tabs[0]:
         with smtplib.SMTP_SSL('smtp.gmail.com', 465) as smtp:
             smtp.login(os.getenv("SMTP_USER"), os.getenv("SMTP_PASS"))
             smtp.send_message(msg)
+
+    def envoyer_message_telegram(message):
+        import requests
+        token = os.getenv("TELEGRAM_TOKEN")
+        chat_id = os.getenv("TELEGRAM_CHAT_ID")
+        url = f"https://api.telegram.org/bot{token}/sendMessage"
+        payload = {"chat_id": chat_id, "text": message}
+        requests.post(url, data=payload)
 
     # === SAISIE ===
         
@@ -589,4 +597,57 @@ with tabs[2]:  # Transits
             except Exception as e:
                 logging.error(f"[Erreur API Transits] {e}")
                 st.error("❌ Une erreur technique est survenue. Réessaie plus tard.")
+
+with tabs[3]:  # Onglet "Me contacter"
+    
+    st.header("📬 Me contacter")
+
+    from dotenv import load_dotenv
+    load_dotenv()
+
+    st.markdown("Tu veux me poser une question ou me faire un retour ? Utilise l’un des moyens ci-dessous :")
+
+    with st.expander("✉️ Envoyer un email directement depuis l’app"):
+        with st.form("form_email_contact"):
+            nom_contact = st.text_input("Ton prénom ou pseudo")
+            email_contact = st.text_input("Ton adresse email")
+            message_contact = st.text_area("Ton message")
+            envoyer = st.form_submit_button("📨 Envoyer")
+
+        if envoyer:
+            if not email_contact or not message_contact:
+                st.warning("Merci de renseigner ton adresse email et ton message.")
+            else:
+                try:
+                    msg = EmailMessage()
+                    msg['Subject'] = f"[FredOn-AstroIA] Message de {nom_contact}"
+                    msg['From'] = os.getenv("SMTP_USER")
+                    msg['To'] = os.getenv("SMTP_USER")
+                    msg.set_content(f"Message de {nom_contact} <{email_contact}> :\n\n{message_contact}")
+
+                    with smtplib.SMTP_SSL('smtp.gmail.com', 465) as smtp:
+                        smtp.login(os.getenv("SMTP_USER"), os.getenv("SMTP_PASS"))
+                        smtp.send_message(msg)
+
+                    st.success("✅ Message envoyé avec succès ! Je te répondrai dès que possible.")
+                except Exception as e:
+                    logging.error(f"[Erreur envoi email contact] {e}")
+                    st.error("❌ Une erreur est survenue lors de l’envoi de l’email. Réessaie plus tard.")
+
+    with st.expander("💬 Laisser un message (envoi direct au créateur via Telegram)"):
+        pseudo = st.text_input("Ton prénom ou pseudo", key="telegram_pseudo")
+        message = st.text_area("Ton message ici", key="telegram_message")
+
+        if st.button("📨 Envoyer via Telegram"):
+            if message.strip():
+                contenu = f"💬 Nouveau message de {pseudo or 'anonyme'} :\n\n{message}"
+                try:
+                    envoyer_message_telegram(contenu)
+                    st.success("✅ Ton message a été envoyé instantanément !")
+                except Exception as e:
+                    logging.error(f"[Erreur Telegram] {e}")
+                    st.error("❌ Problème d'envoi via Telegram.")
+            else:
+                st.warning("Le message est vide… 😅")
+
 
