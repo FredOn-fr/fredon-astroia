@@ -81,6 +81,7 @@ with tabs[0]:
     API_KEY = os.getenv("ASTROLOGYAPI_API_KEY")
 
     st.title("🔮 FredOn-AstroIA : Thème natal astrologique")
+    st.markdown("Explore ton thème natal de façon poétique ou analytique grâce à l'IA. Entre ta date, heure et lieu de naissance pour découvrir ton ciel intérieur ✨")
 
     # === FONCTIONS ===
 
