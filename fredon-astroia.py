@@ -3,6 +3,10 @@
 import streamlit as st
 st.set_page_config(page_title="FredOn-AstroIA", layout="centered")
 
+for key in ["resume_theme", "planet_lines", "aspects_lines", "interpretation", "chart_url", "chat_messages"]:
+    if key not in st.session_state:
+        st.session_state[key] = None
+
 honeypot_placeholder = st.empty()  # conteneur vide
 
 with honeypot_placeholder.container():
@@ -266,7 +270,7 @@ with tabs[0]:
             smtp.send_message(msg)
 
     # === SAISIE ===
-
+        
     with st.form("form_theme"):
         nom = st.text_input("Ton prénom ou pseudo")
         col1, col2, col3 = st.columns(3)
@@ -282,26 +286,41 @@ with tabs[0]:
         with col5:
             minute = st.number_input("Minute", 0, 59, 0)
         ville = st.text_input("Ville de naissance")
+        lat = lon = location_name = None
+        if ville.strip():
+            lat, lon, location_name = get_coords_from_google(ville)
+            if lat and lon:
+                st.success(f"📍 Localisation trouvée : {location_name}")
+                st.write(f"🌐 Latitude : {lat}, Longitude : {lon}")
+            else:
+                st.error("❌ Ville introuvable ou mal orthographiée.")
         style_ia = st.radio(
             "Quel style d'interprétation astrologique souhaites-tu ?",
             ["🌙 Poétique et inspirante", "🧠 Classique et analytique"],
             index=0
-        )
-
+            )
         submitted = st.form_submit_button("🎁 Générer mon thème complet")
 
-    # === FILTRAGE SPAM ===
-    if honey.strip() != "":
-        st.error("🚫 Accès refusé. Suspicion de robot.")
-    elif time.time() - st.session_state["start_time"] < 2:
-        st.warning("⏱️ Tu vas trop vite. Attends quelques secondes.")
-    else:
+    lat = lon = location_name = None
+    if ville.strip():
         lat, lon, location_name = get_coords_from_google(ville)
-        if lat is None or lon is None:
-            st.error("Ville introuvable.")
+        if lat and lon:
+            if not submitted:
+                st.success(f"📍 Localisation trouvée : {location_name}")
+                st.write(f"🌐 Latitude : {lat}, Longitude : {lon}")
+        else:
+            st.error("❌ Ville introuvable ou mal orthographiée.")
+
+    # === Génération du thème uniquement si ville trouvée et bouton cliqué ===
+    if submitted:
+        if honey.strip() != "":
+            st.error("🚫 Accès refusé. Suspicion de robot.")
+        elif time.time() - st.session_state["start_time"] < 2:
+            st.warning("⏱️ Tu vas trop vite. Attends quelques secondes.")
+        elif not lat or not lon:
+            st.error("❌ Impossible de générer le thème sans une ville valide.")
         else:
             tzone = get_timezone(lat, lon, year, month, day)
-            st.success(f"📍 Localisation : {location_name}")
             st.write(f"🌐 Lat : {lat}, Lon : {lon} | UTC{tzone:+.1f}")
 
             birth_data = {
@@ -385,39 +404,41 @@ with tabs[0]:
 
     import io
 
-    contenu_html = generer_fichier_html(
-        nom,
-        st.session_state["resume_theme"],
-        st.session_state["planet_lines"],
-        st.session_state["aspects_lines"],
-        st.session_state["interpretation"],
-        st.session_state["chart_url"]
-    )
+    # ✅ Vérification avant d'utiliser les clés de session_state
+    if all(k in st.session_state and st.session_state[k] is not None for k in ("resume_theme", "planet_lines", "aspects_lines", "interpretation", "chart_url")):
+        contenu_html = generer_fichier_html(
+            nom,
+            st.session_state["resume_theme"],
+            st.session_state["planet_lines"],
+            st.session_state["aspects_lines"],
+            st.session_state["interpretation"],
+            st.session_state["chart_url"]
+        )
 
-    st.download_button(
-        label="📥 Télécharger mon thème en HTML",
-        data=contenu_html,
-        file_name=f"theme_{nom}.html",
-        mime="text/html"
-    )
+        st.download_button(
+            label="📥 Télécharger mon thème en HTML",
+            data=contenu_html,
+            file_name=f"theme_{nom}.html",
+            mime="text/html"
+        )
 
     # === AFFICHAGE PERSISTANT
 
-    if "chart_url" in st.session_state:
+    if "chart_url" in st.session_state and st.session_state["chart_url"]:
         st.subheader("🖼️ Carte du ciel")
         st.image(st.session_state["chart_url"])
 
-    if "planet_lines" in st.session_state:
+    if "planet_lines" in st.session_state and st.session_state["planet_lines"]:
         st.subheader("🌟 Positions des planètes (signes et maisons)")
         for line in st.session_state["planet_lines"]:
             st.write(f"🪐 {line}")
 
-    if "aspects_lines" in st.session_state:
+    if "aspects_lines" in st.session_state and st.session_state["aspects_lines"]:
         st.subheader("🪐 Aspects planétaires")
         for line in st.session_state["aspects_lines"]:
             st.write(f"🔹 {line}")
 
-    if "interpretation" in st.session_state:
+    if "interpretation" in st.session_state and st.session_state["interpretation"]:
         if style_ia == "🌙 Poétique et inspirante":
             st.subheader("✨ Interprétation poétique (IA)")
         else:
@@ -426,37 +447,35 @@ with tabs[0]:
         st.write(st.session_state["interpretation"])
 
     # === CHATBOT AVEC GPT-3.5 ===
-    if all(k in st.session_state for k in ("resume_theme", "planet_lines", "interpretation", "chart_url", "chat_messages")):
+    if "chat_messages" in st.session_state and isinstance(st.session_state["chat_messages"], list):
         st.markdown("---")
         st.subheader("💬 Discute avec Astro-IA")
 
-        for msg in st.session_state.chat_messages[3:]:
+        for msg in st.session_state["chat_messages"][3:]:
             role = "Toi" if msg["role"] == "user" else "Astro-IA"
             st.markdown(f"**{role} :** {msg['content']}")
 
         user_input = st.text_input("Pose une nouvelle question à Astro-IA", key="new_chat_input")
         if st.button("Envoyer ma question") and user_input.strip():
-            st.session_state.chat_messages.append({"role": "user", "content": user_input})
+            st.session_state["chat_messages"].append({"role": "user", "content": user_input})
 
             try:
                 chat_reply = openai.chat.completions.create(
                     model="gpt-3.5-turbo",
-                    messages=st.session_state.chat_messages
+                    messages=st.session_state["chat_messages"]
                 )
                 msg = chat_reply.choices[0].message.content
-                st.session_state.chat_messages.append({"role": "assistant", "content": msg})
+                st.session_state["chat_messages"].append({"role": "assistant", "content": msg})
 
-                # 🔽 Envoi automatique de la conversation par mail à toi
                 if nom:
-                    envoyer_conversation_par_mail("fredon.fr@gmail.com", nom, st.session_state.chat_messages)
+                    envoyer_conversation_par_mail("fredon.fr@gmail.com", nom, st.session_state["chat_messages"])
 
             except Exception as e:
                 st.error(f"Erreur lors de la réponse de l'IA : {e}")
 
             st.rerun()
 
-    # === Export et téléchargement de la discussion Astro-IA ===
-
+        # 🔽 Export discussion
         if st.session_state["chat_messages"]:
             html_discussion = generer_discussion_html(nom, st.session_state["chat_messages"])
 
@@ -465,7 +484,7 @@ with tabs[0]:
                 data=html_discussion,
                 file_name=f"discussion_{nom}.html",
                 mime="text/html"
-)
+            )
 
 with tabs[1]:  # Synastrie
     st.header("💞 Synastrie (en construction)")
