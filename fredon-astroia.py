@@ -444,6 +444,9 @@ with tabs[0]:
         
         st.write(st.session_state["interpretation"])
 
+    import logging
+    logging.basicConfig(level=logging.ERROR, filename="app.log")
+
     # === CHATBOT AVEC GPT-3.5 ===
     if "chat_messages" in st.session_state and isinstance(st.session_state["chat_messages"], list):
         st.markdown("---")
@@ -454,7 +457,9 @@ with tabs[0]:
             st.markdown(f"**{role} :** {msg['content']}")
 
         user_input = st.text_input("Pose une nouvelle question à Astro-IA", key="new_chat_input")
-        if st.button("Envoyer ma question") and user_input.strip():
+        send_button = st.button("Envoyer ma question")
+
+        if send_button and user_input.strip():
             st.session_state["chat_messages"].append({"role": "user", "content": user_input})
 
             try:
@@ -465,11 +470,13 @@ with tabs[0]:
                 msg = chat_reply.choices[0].message.content
                 st.session_state["chat_messages"].append({"role": "assistant", "content": msg})
 
-                if nom:
-                    envoyer_conversation_par_mail("fredon.fr@gmail.com", nom, st.session_state["chat_messages"])
+                # ⬇️ Checkbox avant l’envoi automatique par mail
+                if nom and st.checkbox("📨 M’envoyer cette conversation par email", key="send_email_checkbox"):
+                    envoyer_conversation_par_mail(os.getenv("SMTP_USER"), nom, st.session_state["chat_messages"])
 
             except Exception as e:
-                st.error(f"Erreur lors de la réponse de l'IA : {e}")
+                logging.error(f"Erreur IA : {e}")
+                st.error("❌ Une erreur est survenue. Réessaie plus tard.")
 
             st.rerun()
 
@@ -492,8 +499,9 @@ with tabs[2]:  # Transits
     st.header("🌠 Transits astrologiques (en construction)")
     st.info("🔧 Cette section te permettra bientôt d'explorer les transits jour par jour. Patience cosmique… 🌌")
 
-
     import datetime
+    import logging
+    logging.basicConfig(level=logging.ERROR, filename="app.log")
 
     st.markdown("---")
     st.subheader("🌠 Explorer les transits astrologiques")
@@ -515,24 +523,27 @@ with tabs[2]:  # Transits
                 "transit_date": date_transit.strftime("%Y-%m-%d")
             }
 
-            response = requests.post(base_url + "natal_transits/daily", auth=auth, json=transit_payload)
+            try:
+                response = requests.post(base_url + "natal_transits/daily", auth=auth, json=transit_payload)
 
-            if response.status_code == 200:
-                data = response.json()
-                interpretations = data.get("transits", [])
-                if interpretations:
-                    st.subheader(f"🪐 Transits astrologiques du {date_transit.strftime('%d/%m/%Y')}")
-                    for t in interpretations:
-                        p1 = traductions.get(t["transit_planet"], t["transit_planet"])
-                        p2 = traductions.get(t["natal_planet"], t["natal_planet"])
-                        aspect = traductions_aspects.get(t["aspect_type"].lower(), t["aspect_type"].lower())
-                        orb = t.get("orb", "?")
-                        st.markdown(f"**{p1}** en transit est en *{aspect}* avec **{p2}** natal *(orbe {orb:.1f}°)*")
-                        if "transit_report" in t:
-                            st.write(t["transit_report"])
-                else:
-                    st.info("Aucun transit significatif détecté ce jour-là.")
+                if response.status_code == 200:
+                    data = response.json()
+                    interpretations = data.get("transits", [])
 
+                    if interpretations:
+                        st.subheader(f"🪐 Transits astrologiques du {date_transit.strftime('%d/%m/%Y')}")
+                        for t in interpretations:
+                            p1 = traductions.get(t["transit_planet"], t["transit_planet"])
+                            p2 = traductions.get(t["natal_planet"], t["natal_planet"])
+                            aspect = traductions_aspects.get(t["aspect_type"].lower(), t["aspect_type"].lower())
+                            orb = t.get("orb", "?")
+                            st.markdown(f"**{p1}** en transit est en *{aspect}* avec **{p2}** natal *(orbe {orb:.1f}°)*")
+                            if "transit_report" in t:
+                                st.write(t["transit_report"])
+                    else:
+                        st.info("Aucun transit significatif détecté ce jour-là.")
+
+                    # ➕ Synthèse des transits
                     resume_transits = []
                     for t in interpretations:
                         p1 = traductions.get(t["transit_planet"], t["transit_planet"])
@@ -540,36 +551,42 @@ with tabs[2]:  # Transits
                         aspect = traductions_aspects.get(t["aspect_type"].lower(), t["aspect_type"].lower())
                         orb = t.get("orb", "?")
                         resume_transits.append(f"{p1} {aspect} {p2} (orbe {orb:.1f}°)")
-                        st.markdown(f"**{p1}** en transit est en *{aspect}* avec **{p2}** natal *(orbe {orb:.1f}°)*")
                         if "transit_report" in t and t["transit_report"]:
                             st.write(t["transit_report"])
 
-        # 💬 Si aucun texte explicite : on appelle l’IA
+                    # 🔍 S'il n'y a aucune interprétation API : on demande à l'IA
                     has_interpretation = any("transit_report" in t and t["transit_report"] for t in interpretations)
+
                     if not has_interpretation:
                         st.info("Aucune interprétation fournie par l’API. Je vais demander à l’IA de l’interpréter.")
+                        
                         prompt = (
-                        f"Voici le thème natal de la personne : {', '.join(st.session_state['planet_lines'])}.\n"
-                        f"Et voici les transits astrologiques détectés pour le {date_transit.strftime('%d/%m/%Y')} :\n"
-                        + "\n".join(resume_transits) +
-                        "\n\nPeux-tu faire une interprétation astrologique de ces transits, dans un style "
-                        + ("poétique et inspirant" if style_ia == "🌙 Poétique et inspirante" else "classique et rigoureux") + " ?"
+                            f"Voici le thème natal de la personne : {', '.join(st.session_state['planet_lines'])}.\n"
+                            f"Et voici les transits astrologiques détectés pour le {date_transit.strftime('%d/%m/%Y')} :\n"
+                            + "\n".join(resume_transits) +
+                            "\n\nPeux-tu faire une interprétation astrologique de ces transits, dans un style "
+                            + ("poétique et inspirant" if style_ia == "🌙 Poétique et inspirante" else "classique et rigoureux") + " ?"
                         )
 
-                    try:
-                        ia_response = openai.chat.completions.create(
-                            model="gpt-4-turbo",
-                            messages=[
-                            {"role": "system", "content": "Tu es un astrologue expérimenté."},
-                            {"role": "user", "content": prompt}
-                            ]
-                        ).choices[0].message.content
+                        try:
+                            ia_response = openai.chat.completions.create(
+                                model="gpt-4-turbo",
+                                messages=[
+                                    {"role": "system", "content": "Tu es un astrologue expérimenté."},
+                                    {"role": "user", "content": prompt}
+                                ]
+                            ).choices[0].message.content
 
-                        st.subheader("💫 Interprétation des transits (IA)")
-                        st.write(ia_response)
+                            st.subheader("💫 Interprétation des transits (IA)")
+                            st.write(ia_response)
 
-                    except Exception as e:
-                        st.error(f"Erreur lors de la réponse de l'IA : {e}")
+                        except Exception as e:
+                            logging.error(f"[Erreur GPT-4 - Transits] {e}")
+                            st.error("❌ Une erreur est survenue pendant l’analyse des transits. Réessaie plus tard.")
+                else:
+                    st.error("❌ Erreur lors de l’appel à l’API des transits.")
 
-            else:
-                st.error("Erreur lors de l’appel à l’API des transits.")
+            except Exception as e:
+                logging.error(f"[Erreur API Transits] {e}")
+                st.error("❌ Une erreur technique est survenue. Réessaie plus tard.")
+
