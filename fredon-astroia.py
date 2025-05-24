@@ -3,6 +3,56 @@
 import streamlit as st
 st.set_page_config(page_title="FredOn-AstroIA", layout="centered")
 
+honeypot_placeholder = st.empty()  # conteneur vide
+
+with honeypot_placeholder.container():
+    honey = st.text_input(" ", key="honey", label_visibility="collapsed")
+
+# Après 100 ms, on vide le bloc (il disparaît sans laisser de trace)
+import time
+time.sleep(0.1)
+honeypot_placeholder.empty()
+
+if "start_time" not in st.session_state:
+    st.session_state["start_time"] = time.time()
+
+st.markdown("""
+    <style>
+        /* Titres H1 à H3 en violet avec effet */
+        h1, h2, h3 {
+            color: #5E4AE3 !important;
+            font-family: 'Segoe UI', sans-serif;
+            text-shadow: 1px 1px 2px rgba(94, 74, 227, 0.3);
+            transition: all 0.3s ease;
+        }
+
+        h1:hover, h2:hover, h3:hover {
+            text-shadow: 2px 2px 4px rgba(94, 74, 227, 0.5);
+            transform: scale(1.01);
+        }
+
+        /* Optionnel : changer les boutons aussi */
+        .stButton > button {
+            background-color: #0C0C2C;
+            color: white;
+            font-weight: bold;
+            border-radius: 8px;
+            transition: 0.2s;
+        }
+
+        .stButton > button:hover {
+            background-color: #0C0C2C;
+            transform: scale(1.02);
+        }
+   
+        div.honeypot {
+            display: none !important;
+        }
+
+    </style>
+            
+""", unsafe_allow_html=True)
+
 tabs = st.tabs(["Thème natal", "Synastrie 🔧", "Transits 🔧"])
 
 with tabs[0]:
@@ -22,11 +72,6 @@ with tabs[0]:
     openai.api_key = os.getenv("OPENAI_API_KEY")
     USER_ID = os.getenv("ASTROLOGYAPI_USER_ID")
     API_KEY = os.getenv("ASTROLOGYAPI_API_KEY")
-
-    # === HONEYPOT + DÉLAI ANTI-SPAM ===
-    honey = st.text_input("Ton signe préféré (ne rien écrire ici)", key="honey", label_visibility="collapsed")
-    if "start_time" not in st.session_state:
-        st.session_state["start_time"] = time.time()
 
     st.title("🔮 FredOn-AstroIA : Thème natal astrologique")
 
