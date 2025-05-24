@@ -80,8 +80,18 @@ with tabs[0]:
     USER_ID = os.getenv("ASTROLOGYAPI_USER_ID")
     API_KEY = os.getenv("ASTROLOGYAPI_API_KEY")
 
-    st.title("🔮 FredOn-AstroIA : Thème natal astrologique")
-    st.markdown("Explore ton thème natal de façon poétique ou analytique grâce à l'IA. Entre ta date, heure et lieu de naissance pour découvrir ton ciel intérieur ✨")
+    st.markdown("""
+        <div style='text-align: center; margin-top: 0.5em;'>
+            <h1 style='color: #5E4AE3; font-family: Georgia, sans-serif; font-size: 2.8em; margin: 0;'>FredOn-AstroIA</h1>
+            <div style="font-size: 2em; margin: 0.1em 0;">🔮</div>
+            <h2 style='color: #5E4AE3; font-family: Georgia, sans-serif; font-weight: bold; margin: 0;'>Thème natal astrologique</h2>
+            <p style='font-size: 1.1em; color: white; max-width: 600px; margin: 1em auto 0;'>
+                Explore ton thème natal de façon poétique ou analytique grâce à l'IA.<br>
+                Entre ta date, heure et lieu de naissance pour découvrir ton ciel intérieur ✨
+            </p>
+            <br>
+        </div>
+    """, unsafe_allow_html=True)
 
     # === FONCTIONS ===
 
