@@ -1,0 +1,156 @@
+    /* Titres stylisés */
+h1, h2, h3 {
+    color: #ffffff !important;
+    font-family: 'Segoe UI', sans-serif;
+    text-shadow: 1px 1px 2px rgba(94, 74, 227, 0.3);
+    transition: all 0.3s ease;
+}
+h1:hover, h2:hover, h3:hover {
+    text-shadow: 2px 2px 4px rgba(94, 74, 227, 0.5);
+    transform: scale(1.01);
+}
+
+/* Boutons */
+button,
+.stButton > button {
+    background-color: #3b1d68 !important;
+    color: white !important;
+    font-weight: bold;
+    border: none !important;
+    border-radius: 8px;
+    padding: 10px 16px;
+    font-size: 16px;
+    transition: background-color 0.2s ease, transform 0.2s ease;
+    box-shadow: none !important;
+}
+button:hover,
+.stButton > button:hover {
+    background-color: #5E4AE3 !important;
+    transform: scale(1.02);
+}
+button:focus,
+.stButton > button:focus {
+    outline: none !important;
+    border: none !important;
+    box-shadow: none !important;
+}
+
+/* Cacher les alertes automatiques */
+div[data-baseweb="form-control"] input + div[role="alert"] {
+    display: none !important;
+}
+
+/* Fond complet pour Streamlit */
+[data-testid="stAppViewContainer"] {
+    background: linear-gradient(180deg, #3b1d68 0%, #0C0C2C 100%) !important;
+    background-attachment: fixed;
+    background-size: cover;
+}
+
+html, body {
+    background: linear-gradient(180deg, #3b1d68 0%, #0C0C2C 100%) !important;
+}
+
+/* Champs de saisie : texte, nombre, texte long */
+input,
+textarea,
+.stTextInput input,
+.stNumberInput input,
+.stTextArea textarea,
+[data-testid="stTextInput"] input,
+[data-testid="stNumberInput"] input,
+[data-testid="stTextArea"] textarea {
+    background-color: #1A1A2E !important;
+    color: white !important;
+    border: 1px solid #444 !important;
+    border-radius: 6px !important;
+    box-shadow: none !important;
+    outline: none !important;
+}
+
+/* Focus et invalidation */
+input:focus,
+input:focus-visible,
+input:invalid,
+textarea:focus,
+textarea:focus-visible,
+textarea:invalid {
+    border: 1px solid #5E4AE3 !important;
+    outline: none !important;
+    box-shadow: none !important;
+}
+
+/* Autofill (Chrome) */
+input:-webkit-autofill {
+    box-shadow: 0 0 0px 1000px #1A1A2E inset !important;
+    -webkit-text-fill-color: white !important;
+}
+
+/* Couleur des labels */
+label,
+.css-1cpxqw2 {
+    color: white !important;
+}
+
+/* Sidebar personnalisée */
+[data-testid="stSidebar"] {
+    background: linear-gradient(180deg, #3b1d68 0%, #0C0C2C 100%) !important;
+    color: white !important;
+}
+
+[data-testid="stSidebar"] * {
+    color: white !important;
+}
+
+/* Fond général de l'app */
+body {
+    background: linear-gradient(to bottom, #1b002f, #2e125f);
+    color: white;
+}
+
+/* Pour s’assurer que toute la hauteur est prise */
+html, body {
+    height: 100%;
+}
+
+/* Si tu veux aussi cibler la barre supérieure (header invisible par défaut) */
+header {
+    background-color: transparent;
+}
+
+/* Optionnel : le fond de la partie principale */
+.css-18e3th9 {
+    background-color: transparent;
+}
+
+/* Onglets Streamlit - fond transparent */
+div[data-baseweb="tab"] {
+    background-color: transparent !important;
+    border: none !important;
+    box-shadow: none !important;
+}
+
+/* Optionnel : texte blanc sur fond sombre */
+div[data-baseweb="tab"] > button {
+    background-color: transparent !important;
+    color: white !important;
+    font-weight: bold;
+}
+
+/* Onglet actif */
+div[data-baseweb="tab"] > button[aria-selected="true"] {
+    border-bottom: 2px solid #5E4AE3 !important; /* Violet personnalisé */
+}
+
+/* Onglets Streamlit - rendre tous les conteneurs transparents */
+[data-testid="stTabs"] {
+    background-color: transparent !important;
+    box-shadow: none !important;
+    border: none !important;
+    padding: 0 !important;
+}
+
+/* Conteneur intérieur des onglets */
+[data-testid="stVerticalBlock"] > div:has([data-testid="stTabs"]) {
+    background-color: transparent !important;
+}

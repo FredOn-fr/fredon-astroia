@@ -1,9 +1,71 @@
 import streamlit as st
+
 st.set_page_config(page_title="FredOn-AstroIA", layout="centered")
 
-for key in ["resume_theme", "planet_lines", "aspects_lines", "interpretation", "chart_url", "chat_messages"]:
-    if key not in st.session_state:
-        st.session_state[key] = None
+from services.auth_supabase import handle_google_auth, get_login_url
+from services.supabase_utils import get_supabase_client
+from services.email_utils import envoyer_conversation_par_mail, envoyer_message_telegram
+from services.constants import _, i18n
+
+supabase = get_supabase_client()
+
+import jwt
+import os
+from dotenv import load_dotenv
+load_dotenv()
+from dotenv import load_dotenv
+load_dotenv()
+REDIRECT_URL = os.getenv("REDIRECT_URL")
+
+with open("theme.css") as f:
+    st.markdown(f"<style>{f.read()}</style>", unsafe_allow_html=True)
+
+SUPABASE_URL = os.getenv("SUPABASE_URL")
+
+utilisateur_connecte = handle_google_auth()
+
+user_data = None
+if utilisateur_connecte:
+    try:
+        user_data_resp = supabase.table("utilisateurs").select("*").eq("user_id", utilisateur_connecte["id"]).single().execute()
+        user_data = user_data_resp.data
+    except:
+        try:
+            user_data_resp = supabase.table("utilisateurs").select("*").eq("email", utilisateur_connecte["email"]).single().execute()
+            user_data = user_data_resp.data
+        except Exception as e:
+            st.warning(f"⚠️ Impossible de récupérer les données Supabase : {e}")
+
+login_url = get_login_url(SUPABASE_URL, REDIRECT_URL)
+
+# === SIDEBAR
+with st.sidebar:
+    langue = st.selectbox("🌐 Langue / Language", ["Français", "English"])
+    st.session_state["langue"] = langue
+
+    if utilisateur_connecte:
+        st.markdown(f"👤 Connecté : **{utilisateur_connecte['email']}**")
+
+        with st.expander(f"✨ {_('my_space', st.session_state["langue"])}", expanded=True):
+            st.success(f"✅ {_('daily_notification', st.session_state["langue"])}")
+            st.markdown(f"🗂️ {_('data_saved', st.session_state["langue"])}")
+            st.markdown(f"🪐 {_('transits_info', st.session_state["langue"])}")
+            st.markdown(f"💌 {_('chat_anytime', st.session_state["langue"])}")
+    else:
+        st.markdown(f"### 🔐 {_('login_title', st.session_state["langue"])}")
+        st.markdown(f"{_('login_text', st.session_state["langue"])}")
+        st.markdown(
+            f"""
+            <a href="{login_url}" target="_self">
+                <button>{_('login_google', st.session_state["langue"])}</button>
+            </a>
+            """,
+            unsafe_allow_html=True
+        )
+
+    if st.button(f"🚪 {_('logout', st.session_state["langue"])}"):
+        st.session_state.clear()
+        st.rerun()
 
 honeypot_placeholder = st.empty()  # conteneur vide
 
@@ -18,52 +80,26 @@ honeypot_placeholder.empty()
 if "start_time" not in st.session_state:
     st.session_state["start_time"] = time.time()
 
-st.markdown("""
-    <style>
-        /* Titres H1 à H3 en violet avec effet */
-        h1, h2, h3 {
-            color: #5E4AE3 !important;
-            font-family: 'Segoe UI', sans-serif;
-            text-shadow: 1px 1px 2px rgba(94, 74, 227, 0.3);
-            transition: all 0.3s ease;
-        }
+if "lieu_verifie" not in st.session_state:
+    st.session_state["lieu_verifie"] = False
+if "ville_trouvee" not in st.session_state:
+    st.session_state["ville_trouvee"] = None
 
-        h1:hover, h2:hover, h3:hover {
-            text-shadow: 2px 2px 4px rgba(94, 74, 227, 0.5);
-            transform: scale(1.01);
-        }
-
-        /* Optionnel : changer les boutons aussi */
-        .stButton > button {
-            background-color: #0C0C2C;
-            color: white;
-            font-weight: bold;
-            border-radius: 8px;
-            transition: 0.2s;
-        }
-
-        .stButton > button:hover {
-            background-color: #0C0C2C;
-            transform: scale(1.02);
-        }
-   
-        div.honeypot {
-            display: none !important;
-        }
-
-        /* Ne cache que les messages des st.text_input */
-        div[data-baseweb="form-control"] input + div[role="alert"] {
-            display: none !important;
-        }
-
-    </style>
-            
-""", unsafe_allow_html=True)
-
-tabs = st.tabs(["Thème natal", "Synastrie 🔧", "Transits 🔧", "📬 Me contacter"])
+tabs = st.tabs([
+    _("tab_natal", st.session_state["langue"]),
+    _("tab_synastry", st.session_state["langue"]),
+    _("tab_transits", st.session_state["langue"]),
+    _("tab_account", st.session_state["langue"]),
+    _("tab_contact", st.session_state["langue"])
+])
 
 with tabs[0]:
-    st.markdown("🧬 **Bienvenue dans l’analyse de ton thème natal**")
+
+    st.markdown(f"""
+        <div style='text-align: center; font-size: 1.5em;'>
+            🧬 <strong>{_('welcome', st.session_state['langue'])}</strong>
+        </div>
+    """, unsafe_allow_html=True)
 
     import requests
     import openai
@@ -73,6 +109,9 @@ with tabs[0]:
     from requests.auth import HTTPBasicAuth
     import smtplib
     from email.message import EmailMessage
+    from services.astro_api import get_natal_wheel_chart, get_planet_positions, get_aspects
+    from services.templates import generer_fichier_html, generer_discussion_html
+    from services.ia_engine import generer_interpretation_ia, generer_reponse_chat, get_system_prompt
 
     # === CHARGEMENT DES VARIABLES D'ENVIRONNEMENT ===
     load_dotenv()
@@ -80,14 +119,15 @@ with tabs[0]:
     USER_ID = os.getenv("ASTROLOGYAPI_USER_ID")
     API_KEY = os.getenv("ASTROLOGYAPI_API_KEY")
 
-    st.markdown("""
+    st.markdown(f"""
         <div style='text-align: center; margin-top: 0.5em;'>
             <h1 style='color: #5E4AE3; font-family: Georgia, sans-serif; font-size: 2.8em; margin: 0;'>FredOn-AstroIA</h1>
             <div style="font-size: 2em; margin: 0.1em 0;">🔮</div>
-            <h2 style='color: #5E4AE3; font-family: Georgia, sans-serif; font-weight: bold; margin: 0;'>Thème natal astrologique</h2>
+            <h2 style='color: #5E4AE3; font-family: Georgia, sans-serif; font-weight: bold; margin: 0;'>
+                {_('astro_title', st.session_state['langue'])}
+            </h2>
             <p style='font-size: 1.1em; color: white; max-width: 600px; margin: 1em auto 0;'>
-                Explore ton thème natal de façon poétique ou analytique grâce à l'IA.<br>
-                Entre ta date, heure et lieu de naissance pour découvrir ton ciel intérieur ✨
+                {_('astro_intro', st.session_state['langue'])}
             </p>
             <br>
         </div>
@@ -134,72 +174,6 @@ with tabs[0]:
             return float(response.json()["timezone"])
         return 1.0
 
-    import io
-
-    def generer_fichier_html(nom, resume, planetes, aspects, interpretation, chart_url):
-        contenu_html = f"""
-        <html>
-        <head>
-            <meta charset="UTF-8">
-            <style>
-                body {{
-                    font-family: Arial, sans-serif;
-                    padding: 20px;
-                    color: #333;
-                }}
-                h1, h2 {{
-                    color: #4a148c;
-                }}
-                img {{
-                    width: 100%;
-                    max-width: 400px;
-                    margin: 20px 0;
-                }}
-            </style>
-        </head>
-        <body>
-            <h1>Thème natal de {nom}</h1>
-            <p><strong>Résumé :</strong> {resume}</p>
-            <h2>🖼️ Carte du ciel</h2>
-            <img src="{chart_url}" alt="Carte du ciel">
-            <h2>🪐 Positions des planètes</h2>
-            <ul>
-                {''.join(f"<li>{p}</li>" for p in planetes)}
-            </ul>
-            <h2>🪐 Aspects planétaires</h2>
-            <ul>
-                {''.join(f"<li>{a}</li>" for a in aspects)}
-            </ul>
-
-            <h2>✨ Interprétation poétique</h2>
-            <p>{interpretation.replace('\n', '<br>')}</p>
-        </body>
-        </html>
-        """
-        return contenu_html
-
-    def generer_discussion_html(nom, messages):
-        contenu_html = f"""
-        <html>
-        <head>
-            <meta charset="UTF-8">
-            <style>
-                body {{ font-family: Arial, sans-serif; padding: 20px; color: #333; }}
-                .assistant {{ color: #4a148c; margin-bottom: 10px; }}
-                .user {{ color: #00695c; margin-bottom: 10px; }}
-            </style>
-        </head>
-        <body>
-            <h1>💬 Discussion avec Astro-IA de {nom}</h1>
-        """
-        for msg in messages[3:]:
-            role = "assistant" if msg["role"] == "assistant" else "user"
-            label = "Astro-IA" if role == "assistant" else "Toi"
-            contenu_html += f'<p class="{role}"><strong>{label} :</strong> {msg["content"].replace("\n", "<br>")}</p>'
-        contenu_html += "</body></html>"
-
-        return contenu_html
-
     def detect_aspect(angle_diff):
         aspects = {
             "conjonction": (0, 8),
@@ -214,163 +188,128 @@ with tabs[0]:
                 return name, round(diff, 1)
         return None, None
 
-    signs = ["Bélier", "Taureau", "Gémeaux", "Cancer", "Lion", "Vierge", "Balance", "Scorpion", "Sagittaire", "Capricorne", "Verseau", "Poissons"]
-
     def get_longitude(degree, minute, sign):
         try:
             index = signs.index(sign)
             return index * 30 + degree + minute / 60
         except:
             return None
-
-    traductions = {
-        "Sun": "Soleil", "Moon": "Lune", "Mercury": "Mercure", "Venus": "Vénus", "Mars": "Mars",
-        "Jupiter": "Jupiter", "Saturn": "Saturne", "Uranus": "Uranus", "Neptune": "Neptune", "Pluto": "Pluton",
-        "North Node": "Nœud Nord", "South Node": "Nœud Sud", "Midheaven": "Milieu du Ciel",
-        "Aries": "Bélier", "Taurus": "Taureau", "Gemini": "Gémeaux", "Cancer": "Cancer",
-        "Leo": "Lion", "Virgo": "Vierge", "Libra": "Balance", "Scorpio": "Scorpion",
-        "Sagittarius": "Sagittaire", "Capricorn": "Capricorne", "Aquarius": "Verseau", "Pisces": "Poissons"
-    }
-
-    traductions_aspects = {
-        "conjunction": "conjonction",
-        "sextile": "sextile",
-        "square": "carré",
-        "trine": "trigone",
-        "opposition": "opposition",
-        "quincunx": "quinconce",
-        "semisextile": "semi-sextile",
-        "semisquare": "semi-carré",
-        "sesquiquadrate": "sesquicarré",
-        "quintile": "quintile",
-        "biquintile": "biquintile"
-    }
-
-    def envoyer_conversation_par_mail(destinataire, nom, messages):
-        import tempfile
-        from email.message import EmailMessage
-
-        # Créer contenu .txt lisible
-        contenu_txt = ""
-        for msg in messages:
-            role = msg["role"].capitalize()
-            texte = msg["content"].replace("\n", " ").strip()
-            contenu_txt += f"{role} : {texte}\n\n"
-
-        # Sauvegarde temporaire du fichier .txt
-        with tempfile.NamedTemporaryFile(delete=False, mode='w', encoding='utf-8', suffix='.txt') as tmp:
-            tmp.write(contenu_txt)
-            chemin_fichier = tmp.name
-
-        # Préparer le mail
-        msg = EmailMessage()
-        msg['Subject'] = f"[FredOn-AstroIA] Conversation avec {nom}"
-        msg['From'] = os.getenv("SMTP_USER")
-        msg['To'] = destinataire
-        msg.set_content(f"Voici l’historique de la conversation de {nom}, au format texte lisible.")
-
-        # Ajouter la pièce jointe .txt
-        with open(chemin_fichier, 'rb') as f:
-            msg.add_attachment(f.read(), maintype='text', subtype='plain', filename=f"conversation_{nom}.txt")
-
-        # Envoi SMTP
-        with smtplib.SMTP_SSL('smtp.gmail.com', 465) as smtp:
-            smtp.login(os.getenv("SMTP_USER"), os.getenv("SMTP_PASS"))
-            smtp.send_message(msg)
-
-    def envoyer_message_telegram(message):
-        import requests
-        token = os.getenv("TELEGRAM_TOKEN")
-        chat_id = os.getenv("TELEGRAM_CHAT_ID")
-        url = f"https://api.telegram.org/bot{token}/sendMessage"
-        payload = {"chat_id": chat_id, "text": message}
-        requests.post(url, data=payload)
-
-    # === SAISIE ===
         
-    with st.form("form_theme"):
-        nom = st.text_input("Ton prénom ou pseudo")
+    from services.constants import signs, traductions, traductions_aspects
+
+        # === SAISIE ===
+        
+    with st.form("form_verif_ville"):
+        nom = st.text_input(_('first_name', st.session_state["langue"]), value=user_data.get("nom") if user_data else "")
         col1, col2, col3 = st.columns(3)
         with col1:
-            day = st.number_input("Jour", 1, 31, 1)
+            day = st.number_input(_('day', st.session_state["langue"]), 1, 31, value=int(user_data["birth_date"].split("-")[2]) if user_data and user_data.get("birth_date") else 1)
         with col2:
-            month = st.number_input("Mois", 1, 12, 1)
+            month = st.number_input(_('month', st.session_state["langue"]), 1, 12, value=int(user_data["birth_date"].split("-")[1]) if user_data and user_data.get("birth_date") else 1)
         with col3:
-            year = st.number_input("Année", 1900, 2100, 1990)
+            year = st.number_input(_('year', st.session_state["langue"]), 1900, 2100, value=int(user_data["birth_date"].split("-")[0]) if user_data and user_data.get("birth_date") else 1990)
         col4, col5 = st.columns(2)
         with col4:
-            hour = st.number_input("Heure", 0, 23, 12)
+            hour = st.number_input(_('hour', st.session_state["langue"]), 0, 23, value=int(user_data["birth_time"].split(":")[0]) if user_data and user_data.get("birth_time") else 12)
         with col5:
-            minute = st.number_input("Minute", 0, 59, 0)
-        ville = st.text_input("Ville de naissance")
-        lat = lon = location_name = None
-        if ville.strip():
-            lat, lon, location_name = get_coords_from_google(ville)
-            if lat and lon:
-                st.success(f"📍 Localisation trouvée : {location_name}")
-                st.write(f"🌐 Latitude : {lat}, Longitude : {lon}")
-            else:
-                st.error("❌ Ville introuvable ou mal orthographiée.")
-        style_ia = st.radio(
-            "Quel style d'interprétation astrologique souhaites-tu ?",
-            ["🌙 Poétique et inspirante", "🧠 Classique et analytique"],
-            index=0
-            )
-        submitted = st.form_submit_button("🎁 Générer mon thème complet")
+            minute = st.number_input(_('minute', st.session_state["langue"]), 0, 59, value=int(user_data["birth_time"].split(":")[1]) if user_data and user_data.get("birth_time") else 0)
 
-    lat = lon = location_name = None
-    if ville.strip():
+        st.markdown(
+            f"<p style='color: orange; font-size: 0.9em;'>{_('birth_time_note', st.session_state["langue"])}</p>",
+            unsafe_allow_html=True
+        )
+
+        if hour == 0 and minute == 0:
+            message_fr = "⚠️ Tu as indiqué 0h00. Si tu ne connais pas ton heure exacte de naissance, sache que cela peut grandement influencer la précision de ton thème astrologique."
+            message_en = "⚠️ You entered 12:00 AM. If you don't know your exact time of birth, this may significantly affect the accuracy of your chart."
+            st.warning(message_fr if st.session_state["langue"] == "Français" else message_en)
+        ville = st.text_input(
+            _('birth_city', st.session_state['langue']),
+            value=user_data.get("ville") if user_data and user_data.get("ville") else ""
+        )
+
+        style_options = [ _('inspirante', st.session_state["langue"]), _('analytique', st.session_state["langue"]) ]
+        style_ia = st.radio(
+            _('style_ia', st.session_state["langue"]),
+            style_options,
+            index=0 if (not user_data or user_data.get("style") == "✨ Inspirant") else 1
+        )
+
+        verifier = st.form_submit_button(_('verify_city', st.session_state['langue']))
+
+    if verifier and ville.strip():
         lat, lon, location_name = get_coords_from_google(ville)
         if lat and lon:
-            if not submitted:
-                st.success(f"📍 Localisation trouvée : {location_name}")
-                st.write(f"🌐 Latitude : {lat}, Longitude : {lon}")
+            st.success(_('location_found', st.session_state["langue"]).format(location=location_name))
+            st.write(f"🌐 Latitude : {lat}, Longitude : {lon}")
+            confirmer_ville = st.radio(
+                _( "city_confirm", st.session_state["langue"]),
+                [ _("yes_city", st.session_state["langue"]), _("no_city", st.session_state["langue"]) ],
+                index=0,
+                key="confirmer_ville_radio"
+            )
+            if confirmer_ville == _("yes_city", st.session_state["langue"]):
+                st.session_state["lieu_verifie"] = True
+                st.session_state["ville_trouvee"] = {
+                    "lat": lat, "lon": lon, "name": location_name,
+                    "nom": nom, "day": day, "month": month, "year": year,
+                    "hour": hour, "minute": minute, "style_ia": style_ia
+                }
         else:
-            st.error("❌ Ville introuvable ou mal orthographiée.")
+            st.error(_("city_error", st.session_state["langue"]))
+            st.session_state["lieu_verifie"] = False
 
-    # === Génération du thème uniquement si ville trouvée et bouton cliqué ===
-    if submitted:
-        if honey.strip() != "":
-            st.error("🚫 Accès refusé. Suspicion de robot.")
-        elif time.time() - st.session_state["start_time"] < 2:
-            st.warning("⏱️ Tu vas trop vite. Attends quelques secondes.")
-        elif not lat or not lon:
-            st.error("❌ Impossible de générer le thème sans une ville valide.")
-        else:
-            tzone = get_timezone(lat, lon, year, month, day)
-            st.write(f"🌐 Lat : {lat}, Lon : {lon} | UTC{tzone:+.1f}")
+    if st.session_state.get("lieu_verifie") and st.session_state.get("ville_trouvee"):
+        st.markdown("---")
+        st.subheader(_("check_theme", st.session_state["langue"]))
+        if st.button(_("generate_chart", st.session_state["langue"])):
+            data = st.session_state["ville_trouvee"]
+            lat, lon, location_name = data["lat"], data["lon"], data["name"]
+            nom = data["nom"]
+            day, month, year = data["day"], data["month"], data["year"]
+            hour, minute = data["hour"], data["minute"]
+            style_ia = data["style_ia"]
 
-            birth_data = {
-                "day": int(day), "month": int(month), "year": int(year),
-                "hour": int(hour), "min": int(minute),
-                "lat": lat, "lon": lon, "tzone": tzone
-            }
+            if honey.strip() != "":
+                st.error(_("robot_error", st.session_state["langue"]))
+            elif time.time() - st.session_state["start_time"] < 2:
+                st.warning(_("too_fast", st.session_state["langue"]))
+            else:
+                tzone = get_timezone(lat, lon, year, month, day)
+                st.write(f"🌐 Lat : {lat}, Lon : {lon} | UTC{tzone:+.1f}")
 
-            if submitted:
-                with st.spinner("🔮 Génération de votre thème en cours..."):
-                    auth = HTTPBasicAuth(USER_ID, API_KEY)
-                    base_url = "https://json.astrologyapi.com/v1/"
+                birth_data = {
+                    "day": int(day), "month": int(month), "year": int(year),
+                    "hour": int(hour), "min": int(minute),
+                    "lat": lat, "lon": lon, "tzone": tzone
+                }
+                with st.spinner(_( "generating_chart", st.session_state["langue"] )):
+                    chart_response = get_natal_wheel_chart(birth_data)
+                    if chart_response and "chart_url" in chart_response:
+                        st.session_state["chart_url"] = chart_response["chart_url"]
 
-                    chart = requests.post(base_url + "natal_wheel_chart", auth=auth, json=birth_data)
-                    if chart.status_code == 200:
-                        st.session_state["chart_url"] = chart.json()["chart_url"]
-        
-                    planets = requests.post(base_url + "planets/tropical", auth=auth, json={**birth_data, "hsys": "placidus"})
+                    planets_data = get_planet_positions({**birth_data, "hsys": "placidus"})
                     planet_lines = []
-                    if planets.status_code == 200:
-                        for p in planets.json():
-                            name = traductions.get(p["name"], p["name"])
-                            sign = traductions.get(p["sign"], p["sign"])
+                    if isinstance(planets_data, list):
+                        for p in planets_data:
+                            if st.session_state["langue"] == "Français":
+                                name = traductions.get(p["name"], p["name"])
+                                sign = traductions.get(p["sign"], p["sign"])
+                            else:
+                                name = p["name"]
+                                sign = p["sign"]
                             house = p.get("house", "?")
-                            planet_lines.append(f"{name} en {sign}, maison {house}")
+                            if st.session_state["langue"] == "Français":
+                                line = f"{name} en {sign} et maison {house}"
+                            else:
+                                line = f"{name} in {sign} and house {house}"
+                            planet_lines.append(line)
+
                         st.session_state["planet_lines"] = planet_lines
 
-                    # ➤ Récupération des aspects avec western_horoscope
-                    western = requests.post(base_url + "western_horoscope", auth=auth, json=birth_data)
+                    horoscope_data = get_aspects(birth_data)
                     aspects_lines = []
-                    if western.status_code == 200:
-                        horoscope_data = western.json()
-
+                    if horoscope_data and "aspects" in horoscope_data:
                         aspects = horoscope_data.get("aspects", [])
                         for asp in aspects:
                             planets = asp.get("planets", ["?", "?"])
@@ -378,42 +317,54 @@ with tabs[0]:
                                 planet1 = traductions.get(asp.get("aspecting_planet", "?"), asp.get("aspecting_planet", "?"))
                                 planet2 = traductions.get(asp.get("aspected_planet", "?"), asp.get("aspected_planet", "?"))
                                 aspect_type_en = str(asp.get("type", "aspect inconnu")).lower()
-                                aspect_type = traductions_aspects.get(aspect_type_en, aspect_type_en)
+                                if st.session_state["langue"] == "Français":
+                                    aspect_type = traductions_aspects.get(aspect_type_en, aspect_type_en)
+                                else:
+                                    aspect_type = aspect_type_en
                                 orb = asp.get("orb", "?")
                                 aspects_lines.append(f"{planet1} {aspect_type} {planet2} (orbe {orb:.1f}°)")
                             else:
                                 st.warning(f"Aspects mal formé : {asp}")
-
                         st.session_state["aspects_lines"] = aspects_lines
 
                         resume_theme = f"Voici le thème natal de {nom}, né le {day}/{month}/{year} à {hour:02d}:{minute:02d} à {location_name}."
                         resume_theme += " Planètes : " + ", ".join(planet_lines) + "."
                         resume_theme += " Aspects : " + ", ".join(aspects_lines) + "."
 
-
-                        if style_ia == "🌙 Poétique et inspirante":
-                            system_prompt = "Tu es un astrologue poétique et bienveillant. Tu ne réponds pas à des questions sur le thème du suicide, de la mort ou de la drogue. Si l'utilisateur présente des difficultés psychologiques ou maladives, le diriger vers les instances médicales compétentes...."
-                            user_prompt = resume_theme + " Fais une interprétation astrologique poétique, bienveillante et inspirante de ce thème."
+                        if st.session_state["langue"] == "English":
+                            if style_ia.startswith("🌙"):
+                                user_prompt = resume_theme + " Give an inspiring, supportive and encouraging astrological interpretation of this chart."
+                            else:
+                                user_prompt = resume_theme + " Provide a structured, precise and analytical astrological interpretation of this chart."
                         else:
-                            system_prompt = "Tu es un astrologue classique, rigoureux et pédagogue.Tu ne réponds pas à des questions sur le thème du suicide, de la mort ou de la drogue. Si l'utilisateur présente des difficultés psychologiques ou maladives, le diriger vers les instances médicales compétentes."
-                            user_prompt = resume_theme + " Donne une interprétation astrologique classique, structurée et précise de ce thème."
+                            if style_ia.startswith("🌙"):
+                                user_prompt = resume_theme + " Fais une interprétation astrologique inspirante, bienveillante et encourageante de ce thème."
+                            else:
+                                user_prompt = resume_theme + " Donne une interprétation astrologique analytique, structurée et précise de ce thème."
 
-                        interpretation = openai.chat.completions.create(
-                            model="gpt-4-turbo",
-                            messages=[
-                                {"role": "system", "content": system_prompt},
-                                {"role": "user", "content": user_prompt}
-                            ]
-                        ).choices[0].message.content
+                        interpretation = generer_interpretation_ia(user_prompt, style_ia, st.session_state["langue"])
 
                         st.session_state["resume_theme"] = resume_theme
                         st.session_state["interpretation"] = interpretation
-                        st.session_state["chat_messages"] = [
-                            {"role": "system", "content": "Tu es un astrologue poétique et bienveillant, tu connais le thème astral de l'utilisateur. Tu ne réponds pas à des questions sur le thème du suicide, de la mort ou de la drogue. Si l'utilisateur présente des difficultés psychologiques ou maladives, le diriger vers les instances médicales compétentes."},
-                            {"role": "user", "content": resume_theme},
-                            {"role": "assistant", "content": interpretation}
-                        ]
-                    
+                        st.session_state["theme_genere"] = True
+
+                        if "email" in st.session_state:
+                            supabase_data = {
+                                "email": st.session_state["email"],
+                                "user_id": utilisateur_connecte["id"],  # ✅ nouvel ID
+                                "nom": nom,
+                                "birth_date": f"{year}-{month:02d}-{day:02d}",
+                                "birth_time": f"{hour:02d}:{minute:02d}",
+                                "ville": location_name,
+                                "aspects": ", ".join(st.session_state["aspects_lines"]),
+                                "positions_planetes": ", ".join(st.session_state["planet_lines"]),
+                                "style": style_ia,
+                            }
+                            try:
+                                supabase.table("utilisateurs").upsert(supabase_data, on_conflict=["email"]).execute()
+                                st.success("🎉 Ton thème est enregistré et tu recevras bientôt des notifications personnalisées.")
+                            except Exception as e:
+                                st.error(f"⚠️ Erreur d’enregistrement dans Supabase : {e}")
 
                         st.success("✨ Thème généré avec succès ! Découvre ton interprétation ci-dessous.")
                 
@@ -422,7 +373,7 @@ with tabs[0]:
     import io
 
     # ✅ Vérification avant d'utiliser les clés de session_state
-    if all(k in st.session_state and st.session_state[k] is not None for k in ("resume_theme", "planet_lines", "aspects_lines", "interpretation", "chart_url")):
+    if all(st.session_state.get(k) for k in ("resume_theme", "planet_lines", "aspects_lines", "interpretation", "chart_url")):
         contenu_html = generer_fichier_html(
             nom,
             st.session_state["resume_theme"],
@@ -442,61 +393,148 @@ with tabs[0]:
     # === AFFICHAGE PERSISTANT
 
     if "chart_url" in st.session_state and st.session_state["chart_url"]:
-        st.subheader("🖼️ Carte du ciel")
+        st.subheader(_("chart_image", st.session_state["langue"]))
         st.image(st.session_state["chart_url"])
 
     if "planet_lines" in st.session_state and st.session_state["planet_lines"]:
-        st.subheader("🌟 Positions des planètes (signes et maisons)")
-        for line in st.session_state["planet_lines"]:
+        st.subheader(_("planet_positions", st.session_state["langue"]))
+        for line in st.session_state.get("planet_lines", []):
             st.write(f"🪐 {line}")
 
     if "aspects_lines" in st.session_state and st.session_state["aspects_lines"]:
-        st.subheader("🪐 Aspects planétaires")
+        st.subheader(_("aspects", st.session_state["langue"]))
         for line in st.session_state["aspects_lines"]:
             st.write(f"🔹 {line}")
 
     if "interpretation" in st.session_state and st.session_state["interpretation"]:
-        if style_ia == "🌙 Poétique et inspirante":
-            st.subheader("✨ Interprétation poétique (IA)")
-        else:
-            st.subheader("🧠 Interprétation classique (IA)")
-        
+        if style_ia == "✨ Inspirant":
+            if style_ia == "✨ Inspirant":
+                st.subheader(_("inspirante_label", st.session_state["langue"]))
+            else:
+                st.subheader(_("analytique_label", st.session_state["langue"]))
+
         st.write(st.session_state["interpretation"])
+
+        # ✅ Proposition de connexion Google après interprétation
+        st.markdown("---")
+        st.markdown(_( "daily_gift", st.session_state["langue"]))
+
+        st.markdown(
+            f"""
+            <a href="{login_url}">
+                <button style="padding:14px 24px;font-size:16px;border-radius:10px;background-color:#5E4AE3;color:white;">
+                    {_('daily_google_btn', st.session_state["langue"])}
+                </button>
+            </a>
+            """,
+            unsafe_allow_html=True
+        )
 
     import logging
     logging.basicConfig(level=logging.ERROR, filename="app.log")
 
-    # === CHATBOT AVEC GPT-3.5 ===
-    if "chat_messages" in st.session_state and isinstance(st.session_state["chat_messages"], list):
-        st.markdown("---")
-        st.subheader("💬 Discute avec Astro-IA")
+        # === CHATBOT AVEC GPT-3.5 ===
+    if st.session_state.get("theme_genere"):
 
-        for msg in st.session_state["chat_messages"][3:]:
+        if "chat_messages" not in st.session_state:
+            st.session_state["chat_messages"] = [
+                {"role": "system", "content": "Tu es un astrologue bienveillant et poétique."},
+                {"role": "user", "content": "Bonjour"},
+                {"role": "assistant", "content": "Bonjour 🌟 Que souhaites-tu explorer dans ton thème natal ?"}
+            ]
+
+        st.markdown("---")
+        st.subheader(_("chat_with_ai", st.session_state["langue"]))
+
+        for msg in st.session_state["chat_messages"][2:]:
             role = "Toi" if msg["role"] == "user" else "Astro-IA"
             st.markdown(f"**{role} :** {msg['content']}")
 
-        user_input = st.text_input("Pose une nouvelle question à Astro-IA", key="new_chat_input")
-        send_button = st.button("Envoyer ma question")
+        # Avant le champ text_input
+        if "clear_input" in st.session_state and st.session_state["clear_input"]:
+            st.session_state["new_chat_input"] = ""
+            st.session_state["clear_input"] = False
+
+        st.markdown("#### 💡 Exemples de questions à poser :")
+
+        col1, col2 = st.columns(2)
+        with col1:
+            if st.button(_("ex1_question", langue), key="ex1"):
+                st.session_state["new_chat_input"] = _("ex1_text", langue)
+        with col2:
+            if st.button(_("ex2_question", langue), key="ex2"):
+                st.session_state["new_chat_input"] = _("ex2_text", langue)
+
+        col3, col4 = st.columns(2)
+        with col3:
+            if st.button(_("ex3_question", langue), key="ex3"):
+                st.session_state["new_chat_input"] = _("ex3_text", langue)
+        with col4:
+            if st.button(_("ex4_question", langue), key="ex4"):
+                st.session_state["new_chat_input"] = _("ex4_text", langue)
+
+        col5, col6 = st.columns(2)
+        with col5:
+            if st.button(_("ex5_question", langue), key="ex5"):
+                st.session_state["new_chat_input"] = _("ex5_text", langue)
+        with col6:
+            if st.button(_("ex6_question", langue), key="ex6"):
+                st.session_state["new_chat_input"] = _("ex6_text", langue)
+
+        # Le champ
+        user_input = st.text_input(_("ask_question", st.session_state["langue"]), key="new_chat_input")
+        send_button = st.button(_("send_question", st.session_state["langue"]))
+
+        # Limite d'utilisation pour les non-connectés
+        if "email" not in st.session_state:
+            if "question_count" not in st.session_state:
+                st.session_state["question_count"] = 0
+            if st.session_state["question_count"] >= 5:
+                st.warning("🚫 Tu as atteint la limite de 5 questions. Connecte-toi pour continuer à discuter avec Astro-IA.")
+                send_button = False
+
+        st.markdown(f"🎛️ Style actuel d’interprétation : **{style_ia}**")
 
         if send_button and user_input.strip():
-            st.session_state["chat_messages"].append({"role": "user", "content": user_input})
+            system_prompt = get_system_prompt(style_ia, st.session_state["langue"])
 
-            try:
-                chat_reply = openai.chat.completions.create(
-                    model="gpt-3.5-turbo",
-                    messages=st.session_state["chat_messages"]
+            messages = [{"role": "system", "content": system_prompt}]
+
+            # Injecte le contexte du thème si disponible
+            if all(k in st.session_state for k in ("resume_theme", "planet_lines", "aspects_lines")):
+                contexte = (
+                    st.session_state["resume_theme"] + "\n\n" +
+                    "Planètes : " + ", ".join(st.session_state["planet_lines"]) + "\n" +
+                    "Aspects : " + ", ".join(st.session_state["aspects_lines"])
                 )
-                msg = chat_reply.choices[0].message.content
-                st.session_state["chat_messages"].append({"role": "assistant", "content": msg})
+                messages.append({"role": "user", "content": f"Voici mon thème natal :\n{contexte}"})
+                messages.append({"role": "assistant", "content": "Merci pour ton thème natal, je m'en servirai pour mes réponses."})
 
-                # ⬇️ Checkbox avant l’envoi automatique par mail
-                if nom and st.checkbox("📨 M’envoyer cette conversation par email", key="send_email_checkbox"):
-                    envoyer_conversation_par_mail(os.getenv("SMTP_USER"), nom, st.session_state["chat_messages"])
+            messages.append({"role": "user", "content": user_input})
 
-            except Exception as e:
-                logging.error(f"Erreur IA : {e}")
-                st.error("❌ Une erreur est survenue. Réessaie plus tard.")
+            reponse_ia = generer_reponse_chat(messages)
 
+            if "email" not in st.session_state:
+                st.session_state["question_count"] += 1
+
+            import datetime
+
+            # Création ou ajout au fichier log
+            with open("conversation_log.txt", "a", encoding="utf-8") as log_file:
+                timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                log_file.write(f"\n---\n[{timestamp}]\n")
+                
+                if "email" in st.session_state:
+                    log_file.write(f"Utilisateur : {st.session_state['email']}\n")
+                elif "nom" in st.session_state:
+                    log_file.write(f"Utilisateur : {st.session_state['nom']}\n")
+
+                log_file.write(f"Question : {user_input}\n")
+                log_file.write(f"Réponse : {reponse_ia}\n")
+
+            st.session_state["chat_messages"].append({"role": "user", "content": user_input})
+            st.session_state["chat_messages"].append({"role": "assistant", "content": reponse_ia})
+            st.session_state["clear_input"] = True
             st.rerun()
 
         # 🔽 Export discussion
@@ -504,26 +542,35 @@ with tabs[0]:
             html_discussion = generer_discussion_html(nom, st.session_state["chat_messages"])
 
             st.download_button(
-                label="📥 Télécharger la discussion avec Astro-IA",
+                label=_("download_chart", st.session_state["langue"]),
                 data=html_discussion,
                 file_name=f"discussion_{nom}.html",
                 mime="text/html"
             )
 
 with tabs[1]:  # Synastrie
-    st.header("💞 Synastrie (en construction)")
+    st.subheader(_("synastry_title", st.session_state["langue"]))
     st.info("🔧 La fonctionnalité de synastrie (comparaison entre deux thèmes) est en cours de développement. Reviens bientôt !")
 
+    if "email" in st.session_state:
+        st.markdown("---")
+        st.subheader(_("explore_transits", st.session_state["langue"]))
+    else:
+        st.warning("Connecte-toi pour accéder à cette fonctionnalité.")
+
 with tabs[2]:  # Transits
-    st.header("🌠 Transits astrologiques (en construction)")
+    st.header(_("transits_title", st.session_state["langue"]))
     st.info("🔧 Cette section te permettra bientôt d'explorer les transits jour par jour. Patience cosmique… 🌌")
 
     import datetime
     import logging
     logging.basicConfig(level=logging.ERROR, filename="app.log")
 
-    st.markdown("---")
-    st.subheader("🌠 Explorer les transits astrologiques")
+    if "email" in st.session_state:
+        st.markdown("---")
+        st.subheader(_("explore_transits", st.session_state["langue"]))
+    else:
+       st.warning("Connecte-toi pour accéder à cette fonctionnalité.")
 
     date_transit = st.date_input("Choisis une date pour explorer les transits", value=datetime.date.today())
 
@@ -609,14 +656,105 @@ with tabs[2]:  # Transits
                 logging.error(f"[Erreur API Transits] {e}")
                 st.error("❌ Une erreur technique est survenue. Réessaie plus tard.")
 
-with tabs[3]:  # Onglet "Me contacter"
+with tabs[3]:  # Onglet "Mon compte"
+
+    import streamlit as st
+
+    st.title(_("account_title", st.session_state["langue"]))
+
+    # Vérifie si l'utilisateur est connecté
+    if "email" in st.session_state:
+        email = st.session_state["email"]
+        st.success(f"Tu es connecté avec l'adresse : {email}")
+
+        st.markdown("---")
+        st.subheader(_("saved_data_title", st.session_state["langue"]))
+
+        # 📋 Récapitulatif des données astrologiques
+        with st.expander(_("astro_summary", st.session_state["langue"]), expanded=True):
+            infos = []
+
+            if "nom" in st.session_state:
+                infos.append(("🧑 Nom", st.session_state["nom"]))
+
+            if "birth_date" in user_data:
+                infos.append(("📅 Date de naissance", user_data["birth_date"]))
+
+            if "birth_time" in user_data:
+                infos.append(("⏰ Heure de naissance", user_data["birth_time"]))
+
+            if "ville" in user_data:
+                infos.append(("📍 Ville de naissance", user_data["ville"]))
+
+            if "style" in user_data:
+                infos.append(("✨ Style IA", user_data["style"]))
+
+            if "notifications_ok" in user_data:
+                notif_status = "✅ Activées" if user_data["notifications_ok"] else "❌ Désactivées"
+                infos.append(("📨 Notifications par mail", notif_status))
+
+            for label, value in infos:
+                st.markdown(f"**{label}** : {value}")
+
+        # Affichage conditionnel des données (si elles existent)
+        planet_lines = st.session_state.get("planet_lines")
+        if isinstance(planet_lines, list) and planet_lines:
+            st.markdown("### 🌟 Positions des planètes")
+            for line in planet_lines:
+                st.write(f"🪐 {line}")
+
+        aspects_lines = st.session_state.get("aspects_lines")
+        if isinstance(aspects_lines, list) and aspects_lines:
+            st.markdown("### 🪐 Aspects astrologiques")
+            for line in aspects_lines:
+                st.write(f"🔹 {line}")
+
+        if "style" in st.session_state:
+            st.markdown("### ✨ Style d'interprétation préféré")
+            st.write(f"{st.session_state['style']}")
+
+        st.markdown("---")
+        st.markdown("---")
+        st.subheader("🔔 Notifications")
+
+        notifications_ok = user_data.get("notifications_ok", True)
+
+        notifications_checkbox = st.checkbox(
+            _("daily_email_optin", st.session_state["langue"]),
+            value=notifications_ok
+        )
+
+        if notifications_ok:
+            st.info(_("notifications_enabled", st.session_state["langue"]))
+        else:
+            st.warning(_("notifications_disabled", st.session_state["langue"]))
+
+        if notifications_checkbox != notifications_ok:
+            try:
+                supabase.table("utilisateurs").update({
+                    "notifications_ok": notifications_checkbox
+                }).eq("user_id", utilisateur_connecte["id"]).execute()
+                st.success("✅ Préférence mise à jour.")
+                user_data["notifications_ok"] = notifications_checkbox
+            except Exception as e:
+                st.error("❌ Erreur lors de la mise à jour des préférences.")
+
+    else:
+        st.warning("Tu n'es pas encore connecté. Merci de te connecter pour accéder à ton espace personnel.")
+
+with tabs[4]:  # Onglet "Me contacter"
     
-    st.header("📬 Me contacter")
+    st.header(_("tab_contact", st.session_state["langue"]))
 
     from dotenv import load_dotenv
     load_dotenv()
 
     st.markdown("Tu veux me poser une question ou me faire un retour ? Utilise l’un des moyens ci-dessous :")
+
+    if "email" in st.session_state:
+        st.markdown(f"✉️ Tu es connecté avec : `{st.session_state['email']}`")
+    else:
+        st.info("Tu peux quand même envoyer un message, mais tu n'es pas connecté.")
 
     with st.expander("✉️ Envoyer un email directement depuis l’app"):
         with st.form("form_email_contact"):

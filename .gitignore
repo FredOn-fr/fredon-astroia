@@ -1,14 +1,24 @@
-# Ne pas publier les variables sensibles
+# Fichiers sensibles
 .env
 
-# Cache Streamlit
-.streamlit/
+# Environnement virtuel
+venv/
+.envrc
 
 # Cache Python
 __pycache__/
 *.py[cod]
 *.pyo
+*.pyd
 
-# Fichiers temporaires ou système
+# Fichiers log et temporaires
+*.log
+*.sqlite
+conversation_log.txt
+
+# Streamlit
+.streamlit/config.toml
+
+# Fichiers système
 .DS_Store
 Thumbs.db

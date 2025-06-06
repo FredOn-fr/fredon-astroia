@@ -1,6 +1,19 @@
 [theme]
-primaryColor = "#5E4AE3"
-backgroundColor = "#0C0C2C"
-secondaryBackgroundColor = "#5E4AE3"
-textColor = "#FAFAFA"
+base="dark"
+primaryColor="#5e4ae3"
+backgroundColor="#3b1d68"
+secondaryBackgroundColor="#5e4ae3"
 font = "Georgia"
+
+[browser]
+gatherUsageStats = false
+
+[ui]
+hideTopBar = true
+
+[server]
+headless = true
+enableCORS = false
+port = 8501
+
+

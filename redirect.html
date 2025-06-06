@@ -1,0 +1,22 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="UTF-8">
+    <title>Connexion...</title>
+    <script>
+      const rawHash = window.location.hash;
+      const matches = rawHash.match(/access_token=([^&]+)/);
+
+      if (matches && matches[1]) {
+        const accessToken = matches[1];
+        const redirect = "http://localhost:8501/?access_token=" + accessToken;
+        window.location.replace(redirect);
+      } else {
+        document.body.innerHTML = "<p style='color:red;'>❌ Aucun token détecté</p>";
+      }
+    </script>
+  </head>
+  <body>
+    <p>🔐 Connexion en cours...</p>
+  </body>
+</html>
