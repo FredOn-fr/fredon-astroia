@@ -9,7 +9,7 @@
 
       if (matches && matches[1]) {
         const accessToken = matches[1];
-        const redirect = "http://localhost:8501/?access_token=" + accessToken;
+        const redirect = "https://fredon-astroia.streamlit.app/?access_token=" + accessToken;
         window.location.replace(redirect);
       } else {
         document.body.innerHTML = "<p style='color:red;'>❌ Aucun token détecté</p>";
